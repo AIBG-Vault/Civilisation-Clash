@@ -1,0 +1,78 @@
+.
+├── README.md
+├── clients
+│   ├── agent.js
+│   ├── agent.py
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── simpleAgent.js
+│   └── simpleAgent.py
+├── docs
+│   ├── AIBG Topic manual.docx
+│   ├── AIBG Topic manual.pdf
+│   ├── AIBG Topic presentation.pdf
+│   ├── AIBG Topic presentation.pptx
+│   └── gamestateExample.json
+├── logic
+│   ├── board.js
+│   ├── collisionHandler.js
+│   ├── game.js
+│   ├── gameConfig.js
+│   ├── items
+│   │   ├── apple.js
+│   │   ├── armour.js
+│   │   ├── freeze.js
+│   │   ├── goldenApple.js
+│   │   ├── item.js
+│   │   ├── katana.js
+│   │   ├── leap.js
+│   │   ├── nausea.js
+│   │   ├── resetBorders.js
+│   │   ├── shorten.js
+│   │   └── tron.js
+│   ├── player.js
+│   └── spawner.js
+├── server
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── players.json
+│   ├── players.json.example
+│   ├── server.js
+│   └── utility.js
+└── visuals
+    ├── assets
+    │   └── particlesjs-config.json
+    ├── css
+    │   ├── board.css
+    │   └── index.css
+    ├── favicon.ico
+    ├── img
+    │   ├── AIBG 9.0 Zagreb bear gray.png
+    │   ├── AIBG 9.0 Zagreb bear white.png
+    │   ├── NN-particlesJS-bg.png
+    │   ├── snake-example.png
+    │   └── sprites
+    │       ├── AIBG 6.0 Zagreb bear.png
+    │       ├── AIBG 6.0 Zagreb bear.svg
+    │       ├── apple.png
+    │       ├── armour.png
+    │       ├── border.png
+    │       ├── freeze.png
+    │       ├── goldenApple.png
+    │       ├── katana.png
+    │       ├── leap.png
+    │       ├── nausea.png
+    │       ├── resetBorders.png
+    │       ├── shorten.png
+    │       ├── snake-left.png
+    │       ├── snake-right.png
+    │       ├── snake-straight.png
+    │       ├── snake-tail.png
+    │       └── tron.png
+    ├── index.html
+    └── js
+        ├── board.js
+        ├── debugView.js
+        ├── index.js
+        └── libraries
+            └── particles.js
