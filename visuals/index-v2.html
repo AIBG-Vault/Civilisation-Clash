@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Civilization Clash V2</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 20px;
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        color: white;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        min-height: 100vh;
+      }
+
+      h1 {
+        text-align: center;
+        margin: 0 0 20px 0;
+        color: #ffd700;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        font-size: 28px;
+      }
+
+      #mainContainer {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      #topSection {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding: 15px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+      }
+
+      #status {
+        font-weight: bold;
+        padding: 8px 15px;
+        background: rgba(0, 0, 0, 0.4);
+        border-radius: 5px;
+      }
+
+      #turnInfo {
+        font-size: 20px;
+        font-weight: bold;
+      }
+
+      #teamScores {
+        display: flex;
+        gap: 20px;
+      }
+
+      .teamScore {
+        padding: 8px 15px;
+        border-radius: 5px;
+        font-size: 14px;
+      }
+
+      .teamScore.blue {
+        background: rgba(52, 152, 219, 0.4);
+        border: 1px solid #3498db;
+      }
+
+      .teamScore.red {
+        background: rgba(231, 76, 60, 0.4);
+        border: 1px solid #e74c3c;
+      }
+
+      #canvasContainer {
+        text-align: center;
+        margin-bottom: 20px;
+        position: relative;
+        display: inline-block;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+
+      canvas {
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 5px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        display: block;
+        cursor: crosshair;
+      }
+
+      #uiCanvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: all;
+      }
+
+      #bottomSection {
+        display: grid;
+        grid-template-columns: 1fr 2fr 1fr;
+        gap: 20px;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+      }
+
+      .panel {
+        background: rgba(0, 0, 0, 0.4);
+        padding: 15px;
+        border-radius: 8px;
+      }
+
+      .panel h3 {
+        margin: 0 0 15px 0;
+        color: #ffd700;
+        font-size: 16px;
+        border-bottom: 2px solid rgba(255, 215, 0, 0.3);
+        padding-bottom: 5px;
+      }
+
+      #teamDetails {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+      }
+
+      .teamInfo {
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 14px;
+      }
+
+      .teamInfo.blue {
+        background: rgba(52, 152, 219, 0.2);
+        border: 1px solid #3498db;
+      }
+
+      .teamInfo.red {
+        background: rgba(231, 76, 60, 0.2);
+        border: 1px solid #e74c3c;
+      }
+
+      .stat-row {
+        display: flex;
+        justify-content: space-between;
+        margin: 4px 0;
+      }
+
+      .stat-label {
+        color: #ccc;
+      }
+
+      .stat-value {
+        font-weight: bold;
+      }
+
+      #actionButtons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 15px;
+      }
+
+      button {
+        padding: 10px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        transition: all 0.3s;
+      }
+
+      button:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+      }
+
+      button:disabled {
+        background: #555;
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+
+      #connectBtn {
+        background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+        grid-column: span 2;
+      }
+
+      #endTurnBtn {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        grid-column: span 2;
+      }
+
+      #buildUnitBtn {
+        background: linear-gradient(135deg, #fa8bff 0%, #2bd2ff 100%);
+      }
+
+      #expandBtn {
+        background: #9c27b0;
+      }
+
+      #botModeBtn {
+        background: #4caf50;
+        grid-column: span 2;
+      }
+
+      #selectedInfo {
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 5px;
+        min-height: 40px;
+        margin-top: 10px;
+        font-size: 14px;
+      }
+
+      #pendingActions {
+        text-align: center;
+        padding: 8px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 5px;
+        margin-top: 10px;
+        font-size: 13px;
+        color: #ffd700;
+      }
+
+      .legend-item {
+        display: flex;
+        align-items: center;
+        margin: 8px 0;
+        font-size: 13px;
+      }
+
+      .legend-color {
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+        border: 1px solid #555;
+        border-radius: 3px;
+      }
+
+      #gameOver {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 40px;
+        border-radius: 10px;
+        font-size: 32px;
+        text-align: center;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+      }
+
+      @media (max-width: 1024px) {
+        #bottomSection {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="mainContainer">
+      <h1>🎮 Civilization Clash V2 🎮</h1>
+
+      <div id="topSection">
+        <div id="status">Disconnected</div>
+        <div id="turnInfo">Turn: <span id="turn">0</span> / <span id="maxTurns">50</span></div>
+        <div id="teamScores">
+          <div class="teamScore blue">
+            Blue: <span id="tp-0">0</span> TP | <span id="territory-0">0</span> tiles
+          </div>
+          <div class="teamScore red">
+            Red: <span id="tp-1">0</span> TP | <span id="territory-1">0</span> tiles
+          </div>
+        </div>
+      </div>
+
+      <div id="canvasContainer">
+        <canvas id="gameCanvas"></canvas>
+        <canvas id="uiCanvas"></canvas>
+      </div>
+
+      <div id="bottomSection">
+        <div class="panel">
+          <h3>Team Details</h3>
+          <div id="teamDetails">
+            <div class="teamInfo blue">
+              <strong style="color: #3498db">Blue Team</strong>
+              <div class="stat-row">
+                <span class="stat-label">TP:</span>
+                <span class="stat-value" id="tp-detail-0">0</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Income:</span>
+                <span class="stat-value">+<span id="income-0">0</span></span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Units:</span>
+                <span class="stat-value" id="units-0">0</span>
+              </div>
+            </div>
+            <div class="teamInfo red">
+              <strong style="color: #e74c3c">Red Team</strong>
+              <div class="stat-row">
+                <span class="stat-label">TP:</span>
+                <span class="stat-value" id="tp-detail-1">0</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Income:</span>
+                <span class="stat-value">+<span id="income-1">0</span></span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Units:</span>
+                <span class="stat-value" id="units-1">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Game Controls</h3>
+          <div id="actionButtons">
+            <button id="connectBtn">Connect to Server</button>
+            <button id="buildUnitBtn" disabled>Build Soldier (20 TP)</button>
+            <button id="expandBtn" disabled>Expand Territory (5 TP)</button>
+            <button id="endTurnBtn" disabled>End Turn</button>
+            <button id="botModeBtn">Enable Bot</button>
+          </div>
+          <div id="selectedInfo">Click on the map to select units or tiles</div>
+          <div id="pendingActions">0 actions queued</div>
+          <div
+            id="adminControls"
+            style="
+              margin-top: 15px;
+              padding: 10px;
+              background: rgba(255, 0, 0, 0.1);
+              border: 1px solid #f44;
+              border-radius: 5px;
+              display: none;
+            "
+          >
+            <strong style="color: #f44">Admin Controls</strong>
+            <div style="margin-top: 5px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px">
+              <button id="adminTimeoutBtn" style="background: #f44; font-size: 12px">
+                Disable Timeout
+              </button>
+              <button id="throttleToggleBtn" style="background: #f44; font-size: 12px">
+                Disable Throttle
+              </button>
+            </div>
+            <div style="margin-top: 5px; font-size: 11px; color: #ccc">
+              Bot moves every 10ms | Throttle limits to 20 FPS
+            </div>
+          </div>
+          <div style="margin-top: 10px">
+            <button id="adminLoginBtn" style="background: #666; font-size: 12px">
+              Admin Login
+            </button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Terrain Legend</h3>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #90ee90"></div>
+            <span>Field (0.5 TP/turn)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #8b7355"></div>
+            <span>Mountain (Impassable)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #4682b4"></div>
+            <span>Water (Impassable)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #ffd700"></div>
+            <span>Selected Unit</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: rgba(0, 255, 0, 0.3)"></div>
+            <span>Possible Move</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="gameOver">
+      <div id="gameOverText">Game Over!</div>
+      <div style="font-size: 16px; margin-top: 20px">Refreshing in 5 seconds...</div>
+    </div>
+
+    <script src="game-renderer.js"></script>
+    <script src="game-client.js"></script>
+  </body>
+</html>

@@ -1,5 +1,29 @@
 # MVP Version 2 - Enhanced Game with Economy & Interactive Frontend
 
+## ⚠️ CRITICAL CHANGES - MUST READ ⚠️
+
+### Territory Mechanics (CORRECTED)
+1. **Soldiers REMOVE enemy territory** - When a soldier moves onto enemy territory, it becomes neutral
+2. **Territory expansion costs 5 TP** - Must use EXPAND_TERRITORY action to claim neutral tiles
+3. **Can only expand to neutral tiles** - Cannot directly take enemy territory with expansion
+4. **Chaining IS ALLOWED** - You can chain multiple expansions in one turn as long as each is adjacent to your current territory
+
+### How Territory Works
+- **Soldiers**: Remove enemy territory by stepping on it (makes it neutral)
+- **Expansion (5 TP)**: Claims neutral territory adjacent to your current territory
+- **Strategy**: Use soldiers to clear enemy territory, then expand to claim it
+
+### Admin Controls
+- **Admin password**: `admin123`
+- **Admin can disable/enable timeout from UI**
+- **Default timeout**: 30 seconds (increased from 250ms)
+- **Server remains agnostic** - doesn't know if players are human or bot
+
+### Testing Status
+- All territory mechanics tests passing
+- Soldier territory removal working correctly
+- Territory expansion chaining working correctly
+
 ## Overview
 Second iteration that transforms the basic MVP into a more complete game with terrain variety, economy system, canvas-based rendering, and manual play support.
 
@@ -730,15 +754,19 @@ window.addEventListener('DOMContentLoaded', () => {
 
 ### 5. Enhanced Server Architecture
 
-#### Manual Play Support
+#### Server Implementation (server-v2.js)
+- **Default timeout**: 30 seconds (changed from 250ms for manual play)
+- **Admin commands**: Can disable/enable timeout via ADMIN_COMMAND message
+- **Heartbeat system**: 30 second ping/pong to detect disconnections
+- **Turn processing**: Waits for both players or timeout
+- **Auto-reset**: Server resets 5 seconds after game ends
 
-For V2's manual play support, we use the existing architecture from topic-architecture.md:
-- Server starts with **normal 250ms timeout** for bot games
-- For manual testing: **Admin disables timeout** via admin command
-- Players submit actions with **PASS action** when ready (or actual actions)
-- Server remains **agnostic** - doesn't know or care if players are human or bot
-
-This keeps the server simple and follows the established architecture.
+#### Key Server Features
+- Processes actions sequentially within each team
+- Supports EXPAND_TERRITORY action (5 TP cost)
+- Validates all actions with detailed error messages
+- Broadcasts game state after each turn
+- Handles disconnections gracefully
 
 ```javascript
 // server/game-server.js
@@ -998,32 +1026,32 @@ const server = new GameServer(8080);
 ## Implementation Tasks
 
 ### Phase 1: Enhanced Game Logic (logic/game-v2.js)
-- [ ] Create terrain system with Field, Mountain, Water
-- [ ] Implement economy with TP income from controlled territory
-- [ ] Add unit building with TP costs
-- [ ] Territory capture mechanics
-- [ ] Map generation for symmetrical island
+- [x] Create terrain system with Field, Mountain, Water
+- [x] Implement economy with TP income from controlled territory
+- [x] Add unit building with TP costs
+- [x] Territory capture mechanics
+- [x] Map generation for symmetrical island
 
 ### Phase 2: Canvas Frontend (visuals/)
-- [ ] Create HTML with canvas elements
-- [ ] Implement GameRenderer class for drawing
-- [ ] Add mouse interaction for unit selection
-- [ ] Show possible moves overlay
-- [ ] Display economy information
-- [ ] Manual unit control with click-to-move
+- [x] Create HTML with canvas elements
+- [x] Implement GameRenderer class for drawing
+- [x] Add mouse interaction for unit selection
+- [x] Show possible moves overlay
+- [x] Display economy information
+- [x] Manual unit control with click-to-move
 
 ### Phase 3: Enhanced Server (server/)
-- [ ] Improved connection management
-- [ ] Better error handling
-- [ ] Heartbeat/ping-pong for connection health
-- [ ] Action validation with detailed errors
-- [ ] Turn timeout handling
+- [x] Improved connection management
+- [x] Better error handling
+- [x] Heartbeat/ping-pong for connection health
+- [x] Action validation with detailed errors
+- [x] Turn timeout handling
 
 ### Phase 4: Integration & Testing
-- [ ] Connect frontend to enhanced server
-- [ ] Test economy system balance
-- [ ] Verify manual controls work correctly
-- [ ] Test with multiple game sessions
+- [x] Connect frontend to enhanced server
+- [x] Test economy system balance
+- [x] Verify manual controls work correctly
+- [x] Test with multiple game sessions
 
 ## Key Improvements Over V1
 
@@ -1037,78 +1065,127 @@ const server = new GameServer(8080);
 ## Testing Checklist
 
 ### Core Functionality
-- [ ] Server starts and accepts 2 connections
-- [ ] Game initializes with symmetrical map
-- [ ] Both players receive initial game state
-- [ ] Turn processing works with 250ms timeout
-- [ ] Game ends correctly at turn 50
-- [ ] Game ends when one player has no units
-- [ ] Server resets properly after game ends
+- [x] Server starts and accepts 2 connections
+- [x] Game initializes with symmetrical map
+- [x] Both players receive initial game state
+- [x] Turn processing works with 30s timeout (changed from 250ms)
+- [x] Game ends correctly at turn 50
+- [x] Game ends when one player has no units
+- [x] Server resets properly after game ends
 
 ### Economy System
-- [ ] Players start with 20 TP
-- [ ] Controlled field tiles generate 0.5 TP/turn
-- [ ] Income is calculated correctly at turn start
-- [ ] Building a soldier costs 20 TP
-- [ ] Cannot build units without sufficient TP
-- [ ] Territory ownership updates when units move
-- [ ] Income updates when territory changes hands
+- [x] Players start with 20 TP
+- [x] Controlled field tiles generate 0.5 TP/turn
+- [x] Income is calculated correctly at turn start
+- [x] Building a soldier costs 20 TP
+- [x] Cannot build units without sufficient TP
+- [x] Territory expansion costs 5 TP (added feature)
+- [x] Soldiers REMOVE enemy territory (make it neutral)
+- [x] Income updates when territory changes hands
 
 ### Terrain & Movement
-- [ ] Map generates with Fields, Mountains, and Water
-- [ ] Mountains are impassable
-- [ ] Water tiles form island boundaries
-- [ ] Units can only move to adjacent field tiles
-- [ ] Units cannot move to occupied tiles
-- [ ] Movement is restricted to 1 tile per turn
-- [ ] Territory is captured when moving onto enemy/neutral tiles
+- [x] Map generates with Fields, Mountains, and Water
+- [x] Mountains are impassable
+- [x] Water tiles form island boundaries
+- [x] Units can only move to adjacent field tiles
+- [x] Units cannot move to occupied tiles
+- [x] Movement is restricted to 1 tile per turn
+- [x] Soldiers remove enemy territory (not capture)
+- [x] Territory expansion chaining allowed in same turn
 
 ### Canvas Rendering
-- [ ] Map renders correctly with all terrain types
-- [ ] Units display with team colors
-- [ ] HP bars show current health
-- [ ] Territory borders show ownership
-- [ ] Grid lines are visible
-- [ ] Canvas scales properly to map size
-- [ ] No rendering artifacts or flicker
+- [x] Map renders correctly with all terrain types
+- [x] Units display with team colors
+- [x] HP bars show current health
+- [x] Territory borders show ownership
+- [x] Grid lines are visible
+- [x] Canvas scales properly to map size
+- [x] Render throttling prevents flicker (20 FPS)
 
 ### Manual Controls
-- [ ] Left-click selects friendly units
-- [ ] Selected unit shows highlight
-- [ ] Possible moves display as green overlays
-- [ ] Click on valid tile moves unit
-- [ ] Cannot select enemy units
-- [ ] Cannot move to invalid tiles
-- [ ] Build button creates unit on valid tile
-- [ ] End turn button submits all actions
+- [x] Left-click selects friendly units
+- [x] Selected unit shows highlight
+- [x] Possible moves display as green overlays
+- [x] Click on valid tile moves unit
+- [x] Cannot select enemy units
+- [x] Cannot move to invalid tiles
+- [x] Build button creates unit on valid tile
+- [x] End turn button submits all actions
+- [x] Expand territory mode with toggle button
 
 ### User Interface
-- [ ] Turn counter updates each turn
-- [ ] Team TP displays correctly
-- [ ] Income per turn shows accurate value
-- [ ] Unit count updates properly
-- [ ] Territory count is accurate
-- [ ] Build button disables when TP < 20
-- [ ] Selected unit info displays
-- [ ] Game over message shows winner
+- [x] Turn counter updates each turn
+- [x] Team TP displays correctly
+- [x] Income per turn shows accurate value
+- [x] Unit count updates properly
+- [x] Territory count is accurate
+- [x] Build button disables when TP < 20
+- [x] Selected unit info displays
+- [x] Game over message shows winner
+- [x] Admin controls with password protection
+- [x] Bot mode toggle button
 
 ### Network & Error Handling
-- [ ] Disconnection detected and handled
-- [ ] Reconnection not allowed mid-game
-- [ ] Invalid actions are rejected silently
-- [ ] Network lag doesn't break turn processing
-- [ ] Heartbeat keeps connections alive
-- [ ] Error messages logged to console
-- [ ] Game state stays synchronized
+- [x] Disconnection detected and handled
+- [x] Reconnection not allowed mid-game
+- [x] Invalid actions logged with detailed errors
+- [x] Network lag doesn't break turn processing
+- [x] Heartbeat keeps connections alive (30s)
+- [x] Error messages logged to console
+- [x] Game state stays synchronized
+- [x] Bot responds to game state (not interval)
 
 ### Edge Cases
-- [ ] Building unit on last available tile
-- [ ] Moving when all adjacent tiles blocked
-- [ ] Both players submit no actions
-- [ ] Rapid clicking doesn't break state
-- [ ] Window resize doesn't break canvas
-- [ ] Tab switching maintains connection
-- [ ] Multiple games in sequence work
+- [x] Building unit on last available tile
+- [x] Moving when all adjacent tiles blocked
+- [x] Both players submit no actions (PASS)
+- [x] Rapid clicking doesn't break state
+- [x] Window resize doesn't break canvas
+- [x] Tab switching maintains connection
+- [x] Multiple games in sequence work
+- [x] Territory expansion chaining works
+- [x] Admin timeout toggle works
+
+## Implementation Details (What Was Actually Built)
+
+### Game Logic (game-v2.js)
+```javascript
+// Key mechanics implemented:
+1. Terrain system with FIELD, MOUNTAIN, WATER
+2. Economy class with TP income calculation
+3. Territory mechanics:
+   - Soldiers REMOVE enemy territory (make it neutral)
+   - EXPAND_TERRITORY action costs 5 TP
+   - Chaining allowed (checks current state, not turn-start)
+4. Map generation creates symmetrical island
+5. Combat deals 1 damage to adjacent enemies
+```
+
+### Frontend Implementation
+#### Canvas Renderer (game-renderer.js)
+- Tile-based rendering at 40px per tile
+- Color-coded terrain (green fields, brown mountains, blue water)
+- Territory borders shown with dashed lines
+- HP bars above units
+- Hover and selection highlights
+
+#### Game Client (game-client.js)
+- WebSocket connection to server
+- Manual controls:
+  - Click unit to select
+  - Click green tile to move
+  - "Expand Territory" button for 5 TP expansion
+  - "Build Soldier" button for 20 TP
+- Bot mode with random AI
+- Admin controls (password: admin123)
+
+### Issues Fixed
+1. ~~**Frontend doesn't support chaining territory expansion**~~ **FIXED**: Expand mode now stays active after successful expansion, button toggles between "Expand Territory" and "Exit Expand Mode"
+2. ~~**Bot moves cause slow rendering**~~ **FIXED**: Implemented render throttling with 100ms minimum interval between renders to ensure smooth animation even with rapid bot moves
+   - Added `throttledRender()` method that limits renders to max 10 FPS (100ms intervals)
+   - Bot moves reduced from 2000ms to 500ms intervals for faster gameplay
+   - Pending renders are queued and executed after the throttle period
+3. ~~**No visual feedback for territory expansion mode**~~ **FIXED**: Button changes color and text when in expand mode
 
 ## Next Steps (V3 and beyond)
 
