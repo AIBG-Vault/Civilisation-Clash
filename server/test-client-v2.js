@@ -1,18 +1,26 @@
 import WebSocket from 'ws';
 
 class TestBotV2 {
-  constructor(name = 'TestBot') {
+  constructor(name = 'TestBot', password = null) {
     this.name = name;
+    this.password = password;
     this.ws = null;
     this.teamId = -1;
     this.gameState = null;
+    this.role = null;
   }
 
   connect() {
     this.ws = new WebSocket('ws://localhost:8080');
 
     this.ws.on('open', () => {
-      console.log(`${this.name}: Connected to server!`);
+      console.log(`${this.name}: Authenticating with server...`);
+      // Send AUTH message
+      this.ws.send(JSON.stringify({
+        type: 'AUTH',
+        password: this.password,
+        name: this.name
+      }));
     });
 
     this.ws.on('message', (data) => {
@@ -34,14 +42,20 @@ class TestBotV2 {
     switch (msg.type) {
       case 'AUTH_SUCCESS':
         this.teamId = msg.teamId;
-        console.log(`${this.name}: I am Team ${this.teamId} (${this.teamId === 0 ? 'Blue' : 'Red'})`);
+        this.role = msg.role;
+        console.log(`${this.name}: Authenticated as ${this.role} (Team ${this.teamId} - ${this.teamId === 0 ? 'Blue' : this.teamId === 1 ? 'Red' : 'N/A'})`);
         break;
 
       case 'GAME_STATE':
         this.gameState = msg.state;
+        // Update teamId for players
+        if (this.role === 'player' && msg.yourTeamId >= 0) {
+          this.teamId = msg.yourTeamId;
+        }
         this.logGameState();
-        if (!msg.state.gameOver) {
-          this.makeMove(msg.yourTeamId);
+        // Only make moves if we're a player
+        if (!msg.state.gameOver && this.role === 'player' && this.teamId >= 0) {
+          this.makeMove(this.teamId);
         }
         break;
 
@@ -201,14 +215,37 @@ class TestBotV2 {
   }
 }
 
+// Parse command line arguments
+const args = process.argv.slice(2);
+const clientType = args[0] || 'Bot1';
+const password = args[1];
+
+// Determine password based on client type if not provided
+let finalPassword = password;
+if (!finalPassword) {
+  if (clientType === 'Bot1') {
+    finalPassword = 'password0'; // Team 0
+  } else if (clientType === 'Bot2') {
+    finalPassword = 'password1'; // Team 1
+  } else if (clientType === 'Spectator') {
+    finalPassword = 'spectator';
+  } else if (clientType === 'Admin') {
+    finalPassword = 'admin123';
+  } else {
+    console.log('Usage: node test-client-v2.js [Bot1|Bot2|Spectator|Admin] [password]');
+    process.exit(1);
+  }
+}
+
 // Create and connect bot
-const botName = process.argv[2] || 'TestBotV2';
-const bot = new TestBotV2(botName);
+console.log(`Starting ${clientType} with password authentication...`);
+const bot = new TestBotV2(clientType, finalPassword);
 bot.connect();
 
-console.log(`Starting ${botName}...`);
-console.log('This bot will:');
-console.log('- Build soldiers when it has 20+ TP');
-console.log('- Move units to capture territory');
-console.log('- Prioritize enemy territory over neutral');
-console.log('- Move toward center when no territory to capture');
+if (clientType.startsWith('Bot')) {
+  console.log('This bot will:');
+  console.log('- Build soldiers when it has 20+ TP');
+  console.log('- Move units to capture territory');
+  console.log('- Prioritize enemy territory over neutral');
+  console.log('- Move toward center when no territory to capture');
+}

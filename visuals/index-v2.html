@@ -344,15 +344,20 @@
           >
             <strong style="color: #f44">Admin Controls</strong>
             <div style="margin-top: 5px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px">
-              <button id="adminTimeoutBtn" style="background: #f44; font-size: 12px">
-                Disable Timeout
+              <button id="adminTimeoutBtn" style="background: #4caf50; font-size: 12px">
+                Enable Bot Mode (250ms)
               </button>
               <button id="throttleToggleBtn" style="background: #f44; font-size: 12px">
                 Disable Throttle
               </button>
             </div>
+            <div style="margin-top: 5px">
+              <button id="fpsBtn" style="background: #673ab7; font-size: 12px; width: 100%">
+                Playback: 1 FPS
+              </button>
+            </div>
             <div style="margin-top: 5px; font-size: 11px; color: #ccc">
-              Bot moves every 10ms | Throttle limits to 20 FPS
+              Server processes immediately when both submit | Visual playback controlled by FPS
             </div>
           </div>
           <div style="margin-top: 10px">

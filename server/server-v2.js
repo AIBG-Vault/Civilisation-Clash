@@ -1,5 +1,14 @@
 import { WebSocketServer } from 'ws';
 import { GameV2 } from '../logic/game-v2.js';
+import fs from 'fs';
+
+// Load passwords
+let passwords = { teams: {}, admin: 'admin123', spectator: 'spectator' };
+try {
+  passwords = JSON.parse(fs.readFileSync('./passwords.json', 'utf-8'));
+} catch (err) {
+  console.log('No passwords.json found, using defaults');
+}
 
 class GameServer {
   constructor(port = 8080) {
@@ -9,7 +18,7 @@ class GameServer {
     this.connections = new Map();
     this.pendingActions = new Map();
     this.turnTimer = null;
-    this.turnTimeout = 30000; // 30 seconds for manual play
+    this.turnTimeout = 30000; // 30s default for manual play
     this.timeoutEnabled = true;
     this.heartbeatInterval = null;
 
@@ -19,23 +28,73 @@ class GameServer {
   initServer() {
     this.wss = new WebSocketServer({ port: this.port });
     console.log(`Game server V2 running on ws://localhost:${this.port}`);
-    console.log('Mode: 30 second timeout for manual play.');
-    console.log('Send ADMIN_COMMAND with action: "DISABLE_TIMEOUT" to disable timeout.');
+    console.log('Mode: 30s timeout (manual play)');
+    console.log('Admin commands:');
+    console.log('  - ENABLE_BOT_TIMEOUT: Switch to 250ms timeout for fast bot play');
+    console.log('  - DISABLE_TIMEOUT: Disable timeout completely');
+
+    // Initialize game immediately so map is ready for all connections
+    this.initializeGame();
 
     this.wss.on('connection', (ws) => this.handleConnection(ws));
   }
 
+  initializeGame() {
+    console.log('Initializing game V2 with terrain and economy');
+    this.game = new GameV2('blitz'); // 15x10 map, 50 turns
+    this.game.initialize();
+
+    console.log(`Map generated: ${this.game.mapWidth}x${this.game.mapHeight}`);
+    const fields = this.game.map.filter((t) => t.type === 'FIELD').length;
+    const mountains = this.game.map.filter((t) => t.type === 'MOUNTAIN').length;
+    const water = this.game.map.filter((t) => t.type === 'WATER').length;
+    console.log(`Terrain: ${fields} fields, ${mountains} mountains, ${water} water`);
+  }
+
   handleConnection(ws) {
     const connectionId = this.generateId();
-    const teamId = this.connections.size;
 
-    if (teamId >= 2) {
-      ws.send(
-        JSON.stringify({
-          type: 'ERROR',
-          message: 'Game full',
-        })
-      );
+    // Wait for AUTH message
+    let authTimeout = setTimeout(() => {
+      console.log(`Connection ${connectionId} failed to authenticate`);
+      ws.close();
+    }, 5000); // 5 second timeout for auth
+
+    ws.once('message', (data) => {
+      clearTimeout(authTimeout);
+      try {
+        const authMsg = JSON.parse(data);
+        if (authMsg.type !== 'AUTH') {
+          ws.send(JSON.stringify({ type: 'ERROR', message: 'First message must be AUTH' }));
+          ws.close();
+          return;
+        }
+
+        this.handleAuth(connectionId, ws, authMsg);
+      } catch (err) {
+        console.error('Invalid auth message:', err);
+        ws.close();
+      }
+    });
+  }
+
+  handleAuth(connectionId, ws, authMsg) {
+    const { password, name = 'Unknown', teamId } = authMsg;
+
+    // Check password type
+    let role = null;
+    let assignedTeamId = -1;
+
+    if (password === passwords.admin) {
+      role = 'admin';
+    } else if (password === passwords.spectator) {
+      role = 'spectator';
+    } else if (password === passwords.teams.team0 || password === passwords.teams.team1) {
+      role = 'player';
+      // Get team ID from password
+      assignedTeamId = password === passwords.teams.team0 ? 0 : 1;
+    } else {
+      ws.send(JSON.stringify({ type: 'ERROR', message: 'Invalid password' }));
       ws.close();
       return;
     }
@@ -43,7 +102,9 @@ class GameServer {
     const connection = {
       id: connectionId,
       ws: ws,
-      teamId: teamId,
+      teamId: assignedTeamId,
+      role: role,
+      name: name,
       isAlive: true,
     };
 
@@ -53,18 +114,32 @@ class GameServer {
     ws.send(
       JSON.stringify({
         type: 'AUTH_SUCCESS',
-        teamId: teamId,
+        teamId: assignedTeamId,
+        role: role,
       })
     );
 
-    console.log(`Team ${teamId} connected (${connectionId})`);
+    console.log(`${role} '${name}' connected as ${assignedTeamId >= 0 ? `Team ${assignedTeamId}` : role}`);
 
-    // Start game if both players connected
-    if (this.connections.size === 2) {
-      this.startGame();
+    // Send current game state
+    if (this.game) {
+      const state = this.game.getState();
+      ws.send(
+        JSON.stringify({
+          type: 'GAME_STATE',
+          yourTeamId: assignedTeamId,
+          state: state,
+        })
+      );
     }
 
-    // Setup connection handlers
+    // Start heartbeat when we have players
+    const playerCount = Array.from(this.connections.values()).filter(c => c.role === 'player').length;
+    if (playerCount >= 2 && !this.heartbeatInterval) {
+      this.startHeartbeat();
+    }
+
+    // Setup message handlers
     ws.on('message', (data) => {
       try {
         const message = JSON.parse(data);
@@ -95,19 +170,6 @@ class GameServer {
     });
   }
 
-  startGame() {
-    console.log('Starting new game V2 with terrain and economy');
-    this.game = new GameV2('blitz'); // 15x10 map, 50 turns
-    this.game.initialize();
-    this.broadcastGameState();
-    this.startHeartbeat();
-
-    console.log(`Map generated: ${this.game.mapWidth}x${this.game.mapHeight}`);
-    const fields = this.game.map.filter((t) => t.type === 'FIELD').length;
-    const mountains = this.game.map.filter((t) => t.type === 'MOUNTAIN').length;
-    const water = this.game.map.filter((t) => t.type === 'WATER').length;
-    console.log(`Terrain: ${fields} fields, ${mountains} mountains, ${water} water`);
-  }
 
   handleMessage(connectionId, message) {
     const connection = this.connections.get(connectionId);
@@ -115,7 +177,10 @@ class GameServer {
 
     switch (message.type) {
       case 'SUBMIT_ACTIONS':
-        this.handleActions(connection.teamId, message.actions);
+        // Only players can submit actions
+        if (connection.role === 'player') {
+          this.handleActions(connection.teamId, message.actions);
+        }
         break;
 
       case 'ADMIN_COMMAND':
@@ -140,6 +205,16 @@ class GameServer {
         this.broadcast({
           type: 'ADMIN_MESSAGE',
           message: 'Timeout disabled - manual play mode',
+        });
+        break;
+
+      case 'ENABLE_BOT_TIMEOUT':
+        this.timeoutEnabled = true;
+        this.turnTimeout = 250; // 250ms for fast bot play
+        console.log('Bot timeout enabled: 250ms');
+        this.broadcast({
+          type: 'ADMIN_MESSAGE',
+          message: 'Bot timeout enabled - 250ms per turn',
         });
         break;
 
@@ -168,7 +243,8 @@ class GameServer {
       this.turnTimer = null;
     }
 
-    // Process turn IMMEDIATELY if both submitted (no delay)
+    // Process turn IMMEDIATELY if both submitted (no delay - instant processing)
+    // This means bot games can run as fast as the bots can submit actions
     if (this.pendingActions.size === 2) {
       // Process synchronously for maximum speed
       this.processTurn();
@@ -280,7 +356,6 @@ class GameServer {
 
   reset() {
     console.log('Resetting server');
-    this.game = null;
     this.connections.clear();
     this.pendingActions.clear();
 
@@ -293,7 +368,10 @@ class GameServer {
 
     // Reset to default timeout
     this.timeoutEnabled = true;
-    this.turnTimeout = 250;
+    this.turnTimeout = 30000; // Back to manual play timeout
+
+    // Reinitialize game for next players
+    this.initializeGame();
   }
 
   startHeartbeat() {
