@@ -1,62 +1,65 @@
-_**About this template:**_
-
-- _`agents/`: Example agents for testing out the topic._
-- _`docs/`: Manuals and presentations._
-- _`logic/`: Contains the game logic._
-- _`server/`: Contains the server to which the agents connect to._
-- _`visuals/`: Visualization files for the topic._
-
-_**Regarding this README:**_
-
-- _Replace all italicized placeholders with your actual content._
-- _Remove any sections that are not relevant to your topic._
-- _Keep instructions clear and concise._
-- _Refer to the example READMEs in existing topics for formatting and level of detail._
-
-# AIBG - _Topic_name_
-
-_Replace with the name of your topic/game. Use a descriptive and unique title._
+# AIBG - Civilization Clash
 
 ## Description
 
-_Describe your topic/game in a couple of sentences. Explain the main idea, the objective, and what makes it interesting or unique. Mention the number of players, the type of gameplay, and any special mechanics._
+Civilization Clash is a turn-based strategy game designed for the AI Battleground hackathon. Two AI-controlled civilizations compete for dominance on a symmetrical island map. Players expand territory, build cities, train units, and engage in tactical combat to earn Territory Points and Blood Points. The game features perfect information, allowing teams to develop sophisticated strategies during the 20-hour hackathon. Victory is achieved through territorial control, economic management, and strategic combat over 200 turns (or 50 in Blitz mode).
 
-## Visuals
+## Game Features
 
-_For visuals, simply add a few screenshots or gifs to showcase your topic:_
+### Core Mechanics
 
-<p align="center">
-  <img width="90%" src="https://pic.pnnet.dev/960x540" alt="AIBG - Topic"/>
-  
-  <img width="45%" src="https://pic.pnnet.dev/960x540" alt="AIBG - Topic"/>
-  
-  <img width="45%" src="https://pic.pnnet.dev/960x540" alt="AIBG - Topic"/>
-  
-  <img width="45%" src="https://pic.pnnet.dev/960x540" alt="AIBG - Topic"/>
-  
-  <img width="45%" src="https://pic.pnnet.dev/960x540" alt="AIBG - Topic"/>
-</p>
+- **Turn-based strategy** with 0.25-second decision time limit
+- **Symmetrical maps** ensuring fair competition
+- **Three unit types**: Soldiers, Archers, and Raiders with unique abilities
+- **Economic system**: Territory Points (TP) for income, Blood Points (BP) for combat rewards
+- **Monument control** for strategic advantage
+- **Zone of Control** mechanics for tactical positioning
 
-## Docs
+### Game Modes
 
-_List and link to topic manual and presentation:_
+- **Standard**: 25×15 map, 200 turns, full feature set
+- **Blitz**: 15×10 map, 50 turns, faster gameplay
 
-- [Topic manual](docs/AIBG%20-%20Topic%20manual%20-%20YourTopic.pdf)
-- [Topic presentation](docs/AIBG%20-%20Topic%20presentation%20-%20YourTopic.pdf)
+## Current Implementation Status
 
-## Attribution
+### ✅ MVP Complete
 
-_Depending on your idea, you either started it from scratch or forked an existing repository in which case you need to link it:_
+- Basic game logic with soldiers and combat
+- No economy
+- WebSocket server supporting 2 players
+- Browser-based visualization
+- Automated test client
 
-**Created by:**
+### 🚧 In Development
 
-- _Firstname Lastname_ _(Topic responsible)_
-- _Firstname Lastname_
+- Additional unit types (Archers, Raiders)
+- Terrain variety (Mountains, Water)
+- Cities and city building
+- Monument and Blood Points system
+- Map generation
+- Authentication system
 
-**Forked from [Original Repo](example.link), modified by:**
+## Documentation
 
-- _Firstname Lastname_ _(Topic responsible)_
-- _Firstname Lastname_
+- [Game Specification](claude/aibg-game-spec-final.md) - Detailed game rules and mechanics
+- [Architecture Design](claude/topic-architecture.md) - Technical implementation details
+- [MVP Implementation Guide](claude/completed/mvp-v1/creating_minimal_MVP.md) - Current implementation status
+
+## Project Structure
+
+```
+Civilisation-Clash/
+├── logic/               # Game logic (standalone, zero dependencies)
+│   ├── game.js         # Core game mechanics
+│   └── tests/          # Unit tests
+├── server/             # WebSocket server
+│   ├── server.js       # Main server
+│   └── test-client.js  # Automated test bot
+├── visuals/            # Frontend visualization
+│   └── index.html      # Browser-based game viewer
+├── claude/             # Design documents and specifications
+└── docs/               # Manuals and presentations (TODO)
+```
 
 ## License [![CC BY-NC-SA 4.0][cc-by-nc-sa-shield]][cc-by-nc-sa]
 
@@ -71,48 +74,182 @@ _Do not modify this section. All topics must use this license._
 
 ## Usage
 
-This topic was used in the following events:
+This topic is being developed for:
 
-_List where and when this topic was used (e.g., at which AIBG event). List the event name, location, and date. Example:_
+- **Zagreb 2026** _(AIBG X)_ - In Development
 
-- [**Zagreb 05/2025** _(AIBG 9.0)_](https://best.hr/aibg/povijest/)
-
-## How to run
-
-Before you begin, make sure your environment is set up to run the game. The following prerequisites will help you configure your system to run the server, agents, and visuals correctly.
-
-_Provide step-by-step instructions for running the topic locally. Include prerequisites, setup, and how to start the server, visuals, and agents. Use code blocks for commands. Make sure instructions are clear for someone new to the project._
+## How to Run
 
 ### Prerequisites
 
-_List all software and dependencies that need to be installed (e.g., Node.js, npm, Python, etc.). Specify versions if necessary. Provide installation commands and in what order._
+- **Node.js v18+** - [Download](https://nodejs.org/)
+- **npm** (comes with Node.js)
+- **Web browser** (Chrome, Firefox, or Edge recommended)
 
-### Game flow
+### Installation
 
-_Explain the typical flow of a game round in steps. For example: starting the server, connecting agents, running visuals, and how the game shuts down._
-
-### Running the server
-
-1. Create a `players.json` file in the server directory using the example:
+1. Clone the repository:
 
    ```bash
-   cp players.json.example players.json
+   git clone <repository-url>
+   cd Civilisation-Clash
    ```
 
-   - Edit player IDs and names in the newly created `players.json` as needed
+2. Install server dependencies:
+   ```bash
+   cd server
+   npm install
+   ```
 
-2. Start the server:
+### Running the Server
 
-_Describe how to set up and run the server with command-line options._
+1. Start the WebSocket server:
+   ```bash
+   cd server
+   npm start
+   ```
+   The server will run on `ws://localhost:8080`
 
-### Running the visuals
+### Running the Visualization
 
-_Explain how to start the visualization (e.g., using Live Server in VS Code), and how to access it in the browser._
+The frontend must be served via a web server (not opened directly as a file):
 
-### Running agents
+**Option 1: VS Code Live Server**
 
-_Describe how to run the test agents you created._
+1. Install the "Live Server" extension in VS Code
+2. Right-click on `visuals/index.html`
+3. Select "Open with Live Server"
 
-## Deploy
+**Option 2: Python HTTP Server**
 
-_Provide instructions for deploying the topic on a remote server (e.g., VPS). Include installing prerequisites, copying files, installing dependencies, editing configuration, starting the server, and opening firewall ports. If your topic has any special deployment requirements (e.g., environment variables, extra services), mention them here. Also mention optional steps like setting up a custom domain if applicable._
+```bash
+cd visuals
+python -m http.server 3000
+```
+
+Then open `http://localhost:3000` in your browser
+
+**Option 3: Node.js HTTP Server**
+
+```bash
+npx http-server visuals -p 3000
+```
+
+### Running Test Agents
+
+1. In a new terminal, run the first test client:
+
+   ```bash
+   cd server
+   node test-client.js
+   ```
+
+2. In another terminal, run the second test client:
+   ```bash
+   cd server
+   node test-client.js
+   ```
+
+The game will automatically start when both clients connect. You can watch the game progress in the browser visualization.
+
+### Game Flow
+
+1. Server waits for 2 players to connect
+2. Game starts automatically when both players are connected
+3. Each turn:
+   - Server broadcasts current game state
+   - Players have 250ms to submit their actions
+   - Server processes actions and updates game state
+4. Game ends after 50 turns or when one player is eliminated
+5. Server resets and waits for new players
+
+## API Documentation
+
+### WebSocket Protocol
+
+#### Connection
+
+Connect to `ws://localhost:8080`
+
+#### Client → Server Messages
+
+**Authentication** (sent immediately after connection):
+
+```json
+{
+  "type": "AUTH",
+  "teamId": 0
+}
+```
+
+**Submit Actions** (sent each turn):
+
+```json
+{
+  "type": "SUBMIT_ACTIONS",
+  "actions": [{ "type": "MOVE", "unitId": 42, "targetX": 10, "targetY": 5 }]
+}
+```
+
+#### Server → Client Messages
+
+**Authentication Success**:
+
+```json
+{
+  "type": "AUTH_SUCCESS",
+  "teamId": 0
+}
+```
+
+**Game State** (sent each turn):
+
+```json
+{
+  "type": "GAME_STATE",
+  "yourTeamId": 0,
+  "state": {
+    "turn": 1,
+    "maxTurns": 50,
+    "units": [...],
+    "map": {...},
+    "gameOver": false
+  }
+}
+```
+
+**Game Over**:
+
+```json
+{
+  "type": "GAME_OVER",
+  "winner": 0,
+  "reason": "TURN_LIMIT"
+}
+```
+
+## Development
+
+### Code Formatting
+
+The project uses Prettier for consistent code formatting. Git hooks automatically format code before commits.
+
+```bash
+# Format all files
+cd server
+npm run format
+
+# Check formatting
+npm run format:check
+```
+
+### Testing
+
+```bash
+cd logic
+node --test
+```
+
+## Troubleshooting
+
+- **"Cannot open file://" error**: The visualization must be served via HTTP, not opened directly from the file system

@@ -1,0 +1,11 @@
+{
+  "name": "civilisation-clash",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AIBG Civilization Clash - Turn-based strategy game",
+  "scripts": {
+    "format": "cd server && npm run format",
+    "format:check": "cd server && npm run format:check"
+  },
+  "devDependencies": {}
+}
