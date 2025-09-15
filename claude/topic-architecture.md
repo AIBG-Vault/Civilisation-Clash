@@ -1,5 +1,12 @@
 # AIBG Civilization Clash - Architecture Design
 
+## Implementation Status
+**MVP Complete** ✅
+- Basic game logic with soldiers, movement, and combat
+- WebSocket server handling 2 players
+- Frontend visualization with grid display
+- Test client for automated play
+
 ## Overview
 A turn-based strategy game for the AIBG hackathon where teams develop AI bots to compete. The architecture prioritizes simplicity and modularity, with completely independent game logic that can run standalone for RL training or be embedded in any environment.
 
@@ -13,37 +20,38 @@ A turn-based strategy game for the AIBG hackathon where teams develop AI bots to
 ## Project Structure
 ```
 Civilisation-Clash/
-├── agents/               # Example bot implementations
+├── agents/               # Example bot implementations [TODO]
 │   ├── js/              # JavaScript bot examples
 │   │   ├── random.js
 │   │   └── smart.js
 │   └── python/          # Python bot examples
 │       ├── random.py
 │       └── smart.py
-├── docs/                # Documentation and presentations
+├── docs/                # Documentation and presentations [TODO]
 │   ├── AIBG - Topic manual - Civilization Clash.pdf
 │   └── AIBG - Topic presentation - Civilization Clash.pdf
-├── logic/               # STANDALONE game logic (zero dependencies)
-│   ├── game.js          # Main game class
-│   ├── map.js           # Map generation and territory
-│   ├── units.js         # Unit mechanics
-│   ├── combat.js        # Combat resolution
-│   ├── economy.js       # TP/BP calculations
-│   └── tests/           # Game logic tests
+├── logic/               # STANDALONE game logic (zero dependencies) [MVP DONE]
+│   ├── game.js          # Main game class [IMPLEMENTED]
+│   ├── map.js           # Map generation and territory [TODO]
+│   ├── units.js         # Unit mechanics [BASIC DONE]
+│   ├── combat.js        # Combat resolution [BASIC DONE]
+│   ├── economy.js       # TP/BP calculations [TODO]
+│   └── tests/           # Game logic tests [BASIC TESTS DONE]
 │       ├── game.test.js
 │       ├── combat.test.js
 │       └── scenarios/    # Test game states
-├── server/              # WebSocket server wrapper
-│   ├── server.js        # Main server file
-│   ├── passwords.json   # Team passwords
-│   ├── package.json     # Server dependencies (ws)
-│   └── Dockerfile       # Simple container
-├── visuals/             # Frontend visualization
-│   ├── index.html       # Single page app
-│   ├── style.css        # Game styles
-│   ├── game.js          # Rendering logic
-│   └── assets/          # Sprites and images
-└── README.md
+├── server/              # WebSocket server wrapper [MVP DONE]
+│   ├── server.js        # Main server file [IMPLEMENTED]
+│   ├── test-client.js   # Test WebSocket client [IMPLEMENTED]
+│   ├── passwords.json   # Team passwords [TODO]
+│   ├── package.json     # Server dependencies (ws) [DONE]
+│   └── Dockerfile       # Simple container [TODO]
+├── visuals/             # Frontend visualization [MVP DONE]
+│   ├── index.html       # Single page app [IMPLEMENTED]
+│   ├── style.css        # Game styles [INLINE IN HTML]
+│   ├── game.js          # Rendering logic [INLINE IN HTML]
+│   └── assets/          # Sprites and images [TODO]
+└── README.md            # [TEMPLATE ONLY]
 ```
 
 ## Component Design
@@ -665,3 +673,59 @@ SAVE_GAMES=true        # Save game replays
 - All game mechanics have corresponding tests
 - Zero external dependencies for game logic
 - Bots can connect and play within 5 minutes of reading docs
+
+## Current MVP Implementation Details
+
+For more detail, refer `claude/completed/mvp-v1/creating_minimal_MVP.md`.
+### Completed Features (MVP)
+1. **Game Logic (`logic/game.js`)** ✅
+   - Fixed 15x10 map with field terrain only
+   - 2 players with 3 soldiers each
+   - Basic movement (1 tile per turn)
+   - Simple combat (adjacent units deal 1 damage)
+   - Territory Points calculation
+   - Win conditions: elimination or 50 turns
+   - Turn processing with action validation
+
+2. **Server (`server/server.js`)** ✅
+   - WebSocket server on port 8080
+   - Accepts exactly 2 connections
+   - Auto-assigns teams (0 and 1)
+   - 250ms turn timeout
+   - Broadcasts game state after each turn
+   - Sends GAME_OVER messages
+   - Auto-resets after game ends
+
+3. **Frontend (`visuals/index.html`)** ✅
+   - 15x10 grid display
+   - Units shown as colored squares (blue/red)
+   - HP bars on units
+   - Turn counter and unit counts
+   - Manual connect button (requires web server due to CORS)
+   - Optional auto-play mode for testing
+   - Game over display
+
+4. **Test Client (`server/test-client.js`)** ✅
+   - Automated WebSocket client
+   - Simple AI moving toward center
+   - Demonstrates connection protocol
+
+### Not Yet Implemented
+- Multiple unit types (Archers, Raiders)
+- Terrain variety (Mountains, Water)
+- Cities and city building
+- Monument and Blood Points
+- Zone of Control
+- Territory expansion action
+- Map generation
+- Authentication system
+- Admin commands
+- Spectator mode
+- Docker deployment
+- Comprehensive test suite
+
+### Known Issues
+- Frontend must be served via web server (not file://) due to WebSocket CORS restrictions
+- No reconnection handling for disconnected players
+- No save/load game state functionality
+- Basic graphics (no sprites or animations)
