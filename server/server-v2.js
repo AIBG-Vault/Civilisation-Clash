@@ -243,9 +243,17 @@ class GameServer {
       this.turnTimer = null;
     }
 
-    // Process turn IMMEDIATELY if both submitted (no delay - instant processing)
+    // Get active player count (only count player connections, not spectators/admins)
+    const activePlayers = Array.from(this.connections.values()).filter(
+      c => c.role === 'player' && c.teamId >= 0
+    );
+
+    // Get unique teams that have players
+    const activeTeams = new Set(activePlayers.map(p => p.teamId));
+
+    // Process turn IMMEDIATELY if all active teams have submitted
     // This means bot games can run as fast as the bots can submit actions
-    if (this.pendingActions.size === 2) {
+    if (this.pendingActions.size === activeTeams.size && activeTeams.size > 0) {
       // Process synchronously for maximum speed
       this.processTurn();
     } else if (this.timeoutEnabled) {
@@ -255,8 +263,8 @@ class GameServer {
         this.processTurn();
       }, this.turnTimeout);
     } else {
-      // No timeout - wait for other player
-      console.log('Waiting for other player (timeout disabled)');
+      // No timeout - wait for other players
+      console.log(`Waiting for other players (${this.pendingActions.size}/${activeTeams.size} teams submitted)`);
     }
   }
 
