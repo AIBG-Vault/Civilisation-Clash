@@ -184,7 +184,10 @@ class GameServer {
         break;
 
       case 'ADMIN_COMMAND':
-        this.handleAdminCommand(message);
+        // Only admins can execute admin commands
+        if (connection.role === 'admin') {
+          this.handleAdminCommand(message);
+        }
         break;
 
       case 'PING':
@@ -411,7 +414,8 @@ class GameServer {
 }
 
 // Start server
-const server = new GameServer(8080);
+const port = process.env.PORT || 8080;
+const server = new GameServer(port);
 
 // Handle graceful shutdown
 process.on('SIGINT', () => {
