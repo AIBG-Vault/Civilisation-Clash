@@ -1,6 +1,5 @@
 {
   "name": "civilization-clash-server",
-  "version": "1.0.0",
   "type": "module",
   "description": "WebSocket server for AIBG Civilization Clash",
   "scripts": {
