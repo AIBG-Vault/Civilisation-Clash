@@ -15,15 +15,16 @@ class GameClient {
     this.timeoutEnabled = true;
     this.pendingExpansions = new Set(); // Track tiles that will be expanded this turn
 
-    // Rendering throttle for bot games
-    this.renderThrottleTimer = null;
-    this.pendingRender = false;
-    this.lastRenderTime = 0;
-    this.playbackFPS = 1; // Default 1 FPS
-    this.MIN_RENDER_INTERVAL = 1000 / this.playbackFPS; // Convert FPS to interval
-    this.throttleEnabled = true; // Can be toggled via UI
-    this.stateQueue = []; // Queue of game states to render
+    // Visual playback modes
+    this.playbackMode = 'queue'; // 'realtime' or 'queue'
+    this.playbackFPS = 2; // Default 2 FPS for queue mode
+    this.realtimeFPS = 30; // 30 FPS for realtime mode (reasonable throttle)
+    this.stateQueue = []; // Queue of game states for playback mode
     this.isPlayingBack = false; // Whether we're playing back queued states
+    this.playbackInterval = null; // Interval for playback
+    this.lastRenderTime = 0; // For realtime throttling
+    this.pendingGameOver = null; // Store game over message until playback catches up
+    this.pendingNewGame = null; // Store new game state until ready to show it
 
     this.canvas = document.getElementById('gameCanvas');
     this.uiCanvas = document.getElementById('uiCanvas');
@@ -46,8 +47,16 @@ class GameClient {
     document.getElementById('botModeBtn').onclick = () => this.toggleBotMode();
     document.getElementById('adminLoginBtn').onclick = () => this.adminLogin();
     document.getElementById('adminTimeoutBtn').onclick = () => this.toggleTimeout();
-    document.getElementById('throttleToggleBtn').onclick = () => this.toggleThrottle();
+    document.getElementById('adminResetBtn').onclick = () => this.resetServer();
+    document.getElementById('playbackModeBtn').onclick = () => this.togglePlaybackMode();
     document.getElementById('fpsBtn').onclick = () => this.cycleFPS();
+
+    // Admin password field enter key support
+    document.getElementById('adminPassword').onkeypress = (e) => {
+      if (e.key === 'Enter') {
+        this.adminLogin();
+      }
+    };
 
     this.renderer.onTileClick = (x, y) => this.handleTileClick(x, y);
   }
@@ -106,8 +115,7 @@ class GameClient {
       document.getElementById('buildUnitBtn').disabled = true;
       document.getElementById('expandBtn').disabled = true;
       document.getElementById('status').textContent = 'Disconnected';
-      document.getElementById('adminControls').style.display = 'none';
-      document.getElementById('adminLoginBtn').style.display = 'block';
+      // Don't hide admin controls on game disconnect - admin is separate
     };
   }
 
@@ -130,13 +138,16 @@ class GameClient {
           document.getElementById('expandBtn').disabled = true;
           document.getElementById('botModeBtn').disabled = true;
         } else if (this.role === 'admin') {
-          document.getElementById('status').textContent = 'Connected - Admin Mode';
-          document.getElementById('adminControls').style.display = 'block';
-          document.getElementById('adminLoginBtn').style.display = 'none';
-          // Admin can still play if they want
+          // If connected as admin for gameplay, they're also a player
+          document.getElementById('status').textContent = 'Connected - Admin Playing';
+          // Game controls enabled
           document.getElementById('endTurnBtn').disabled = false;
           document.getElementById('buildUnitBtn').disabled = false;
           document.getElementById('expandBtn').disabled = false;
+          // Auto-authenticate admin panel
+          if (!this.isAdmin) {
+            this.adminAutoAuth('admin123');
+          }
         } else if (this.role === 'player') {
           document.getElementById('status').textContent = `Connected - Playing as ${
             this.myTeamId === 0 ? 'Blue Team' : 'Red Team'
@@ -148,6 +159,23 @@ class GameClient {
         break;
 
       case 'GAME_STATE':
+        // Check if this is a new game starting (turn reset to 0)
+        const isNewGame = this.gameState && this.gameState.turn > 0 && message.state.turn === 0;
+
+        // Handle new game during playback
+        if (
+          isNewGame &&
+          this.playbackMode === 'queue' &&
+          (this.isPlayingBack || this.stateQueue.length > 0)
+        ) {
+          // Store the new game state for later
+          this.pendingNewGame = message.state;
+          console.log('New game detected, will show after current playback completes');
+
+          // Don't process this state yet
+          return;
+        }
+
         this.gameState = message.state;
         // Update teamId only if we're a player
         if (this.role === 'player' && message.yourTeamId >= 0) {
@@ -156,25 +184,42 @@ class GameClient {
         this.renderer.gameState = this.gameState;
         this.updateUI();
 
-        // Throttle rendering for smooth animation when bots are playing
+        // Normal rendering
         this.throttledRender();
 
         this.pendingActions = [];
         document.getElementById('pendingActions').textContent = '0 actions queued';
 
         if (this.gameState.gameOver) {
-          this.showGameOver();
+          // Don't show game over immediately in playback mode
+          if (this.playbackMode === 'queue') {
+            // Queue it for later
+            this.pendingGameOver = {
+              winner: this.gameState.winner,
+              turn: this.gameState.turn,
+            };
+          } else {
+            // Real-time mode: show immediately
+            this.showGameOver();
+          }
+
           if (this.botMode) {
             this.toggleBotMode(); // Stop bot when game ends
           }
-        } else if (this.botMode && this.role === 'player') {
+        } else if (this.botMode && this.role === 'player' && !isNewGame) {
           // Bot responds immediately to new game state (only for players)
           this.makeBotMove();
         }
         break;
 
       case 'GAME_OVER':
-        this.showGameOver(message);
+        if (this.playbackMode === 'queue') {
+          // Queue the game over for playback
+          this.pendingGameOver = message;
+        } else {
+          // Real-time mode: show immediately
+          this.showGameOver(message);
+        }
         break;
 
       case 'ERROR':
@@ -437,20 +482,25 @@ class GameClient {
   }
 
   throttledRender() {
-    // If throttling is disabled, render immediately
-    if (!this.throttleEnabled) {
-      this.renderer.render(this.gameState);
-      return;
-    }
+    if (this.playbackMode === 'realtime') {
+      // Real-time mode with minimal throttling
+      const now = Date.now();
+      const minInterval = 1000 / this.realtimeFPS;
 
-    // Queue the current state for playback
-    if (this.gameState) {
-      this.stateQueue.push(JSON.parse(JSON.stringify(this.gameState)));
-    }
+      if (now - this.lastRenderTime >= minInterval) {
+        this.renderer.render(this.gameState);
+        this.lastRenderTime = now;
+      }
+    } else {
+      // Queue mode for controlled playback
+      if (this.gameState && !this.pendingNewGame) {
+        this.stateQueue.push(JSON.parse(JSON.stringify(this.gameState)));
+      }
 
-    // Start playback if not already running
-    if (!this.isPlayingBack) {
-      this.startPlayback();
+      // Start playback if not already running
+      if (!this.isPlayingBack) {
+        this.startPlayback();
+      }
     }
   }
 
@@ -458,6 +508,49 @@ class GameClient {
     if (this.stateQueue.length === 0) {
       this.isPlayingBack = false;
       document.getElementById('pendingActions').textContent = '0 actions queued';
+
+      // Check if we should show game over
+      if (this.pendingGameOver) {
+        this.showGameOver(this.pendingGameOver);
+        this.pendingGameOver = null;
+
+        // After showing game over, check if there's a new game waiting
+        if (this.pendingNewGame) {
+          setTimeout(() => {
+            console.log('Transitioning to new game');
+
+            // Process the pending new game
+            this.gameState = this.pendingNewGame;
+            this.renderer.gameState = this.gameState;
+            this.updateUI();
+
+            // Start fresh with the new game
+            this.stateQueue = [];
+            this.throttledRender();
+
+            // Re-enable bot if it was active
+            if (this.botMode && this.role === 'player') {
+              this.makeBotMove();
+            }
+
+            this.pendingNewGame = null;
+          }, 3000); // Wait 3 seconds after game over
+        }
+      } else if (this.pendingNewGame) {
+        // New game without game over (shouldn't happen normally)
+        console.log('Processing pending new game');
+        this.gameState = this.pendingNewGame;
+        this.renderer.gameState = this.gameState;
+        this.updateUI();
+        this.throttledRender();
+
+        if (this.botMode && this.role === 'player') {
+          this.makeBotMove();
+        }
+
+        this.pendingNewGame = null;
+      }
+
       return;
     }
 
@@ -465,7 +558,7 @@ class GameClient {
 
     // Show playback status
     document.getElementById('pendingActions').textContent =
-      `Playing back: ${this.stateQueue.length} states remaining`;
+      `Queue: ${this.stateQueue.length} states`;
 
     // Render next state from queue
     const nextState = this.stateQueue.shift();
@@ -475,12 +568,19 @@ class GameClient {
     const tempState = this.gameState;
     this.gameState = nextState;
     this.updateUI();
+
+    // Check if this state is game over
+    if (nextState.gameOver && this.pendingGameOver) {
+      // We've reached the game over state in playback
+      // Will show it when queue is empty
+    }
+
     this.gameState = tempState;
 
     // Schedule next render
-    setTimeout(() => {
+    this.playbackInterval = setTimeout(() => {
       this.startPlayback();
-    }, this.MIN_RENDER_INTERVAL);
+    }, 1000 / this.playbackFPS);
   }
 
   showGameOver(message) {
@@ -640,16 +740,103 @@ class GameClient {
   }
 
   adminLogin() {
-    alert('Please reconnect with admin password (admin123) to access admin controls');
+    // Get password from input field
+    const passwordInput = document.getElementById('adminPassword');
+    const password = passwordInput.value;
+
+    if (!password) {
+      alert('Please enter the admin password');
+      return;
+    }
+
+    this.adminAutoAuth(password);
+    // Clear password field
+    passwordInput.value = '';
+  }
+
+  adminAutoAuth(password) {
+    // Create a separate admin connection for sending commands
+    const adminWs = new WebSocket('ws://localhost:8080');
+
+    adminWs.onopen = () => {
+      // Send AUTH message with admin password
+      adminWs.send(
+        JSON.stringify({
+          type: 'AUTH',
+          password: password,
+          name: 'Admin Control Panel',
+        })
+      );
+    };
+
+    adminWs.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+
+      if (message.type === 'AUTH_SUCCESS') {
+        if (message.role === 'admin') {
+          // Success - store admin connection
+          this.adminWs = adminWs;
+          this.isAdmin = true;
+
+          // Update UI
+          document.getElementById('adminLoginSection').style.display = 'none';
+          document.getElementById('adminControls').style.display = 'block';
+          document.getElementById('adminStatus').textContent = 'Admin authenticated';
+          document.getElementById('adminStatus').style.color = '#4CAF50';
+
+          console.log('Admin authentication successful');
+        } else {
+          // Not admin password
+          if (password !== 'admin123') {
+            // Only alert if not auto-auth
+            alert('Invalid admin password');
+          }
+          adminWs.close();
+        }
+      } else if (message.type === 'ERROR') {
+        if (password !== 'admin123') {
+          // Only alert if not auto-auth
+          alert('Admin authentication failed: ' + message.message);
+        }
+        adminWs.close();
+      } else if (message.type === 'ADMIN_MESSAGE') {
+        // Show admin command feedback
+        document.getElementById('adminStatus').textContent = message.message;
+        setTimeout(() => {
+          document.getElementById('adminStatus').textContent = 'Admin authenticated';
+        }, 3000);
+      }
+    };
+
+    adminWs.onerror = () => {
+      if (password !== 'admin123') {
+        // Only alert if not auto-auth
+        alert('Failed to connect for admin authentication');
+      }
+    };
+
+    adminWs.onclose = () => {
+      if (this.adminWs === adminWs) {
+        // Admin connection lost
+        this.adminWs = null;
+        this.isAdmin = false;
+        document.getElementById('adminLoginSection').style.display = 'block';
+        document.getElementById('adminControls').style.display = 'none';
+        document.getElementById('adminStatus').textContent = '';
+      }
+    };
   }
 
   toggleTimeout() {
-    if (this.role !== 'admin' || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!this.isAdmin || !this.adminWs || this.adminWs.readyState !== WebSocket.OPEN) {
+      alert('Admin authentication required');
+      return;
+    }
 
     this.timeoutEnabled = !this.timeoutEnabled;
     const action = this.timeoutEnabled ? 'ENABLE_BOT_TIMEOUT' : 'DISABLE_TIMEOUT';
 
-    this.ws.send(
+    this.adminWs.send(
       JSON.stringify({
         type: 'ADMIN_COMMAND',
         action: action,
@@ -668,48 +855,76 @@ class GameClient {
     }
   }
 
-  toggleThrottle() {
-    if (this.role !== 'admin') return;
+  resetServer() {
+    if (!this.isAdmin || !this.adminWs || this.adminWs.readyState !== WebSocket.OPEN) {
+      alert('Admin authentication required');
+      return;
+    }
 
-    this.throttleEnabled = !this.throttleEnabled;
-    const btn = document.getElementById('throttleToggleBtn');
+    if (confirm('Are you sure you want to reset the server? This will end the current game.')) {
+      this.adminWs.send(
+        JSON.stringify({
+          type: 'ADMIN_COMMAND',
+          action: 'RESET_GAME',
+        })
+      );
+      console.log('Server reset requested');
+    }
+  }
 
-    // Clear state queue when toggling throttle
-    this.stateQueue = [];
-    this.isPlayingBack = false;
-    document.getElementById('pendingActions').textContent = '0 actions queued';
+  togglePlaybackMode() {
+    // Toggle between realtime and queue modes
+    this.playbackMode = this.playbackMode === 'realtime' ? 'queue' : 'realtime';
+    const btn = document.getElementById('playbackModeBtn');
 
-    if (this.throttleEnabled) {
-      btn.textContent = 'Disable Throttle';
-      btn.style.background = '#f44';
-      console.log(`Render throttling enabled (${this.playbackFPS} FPS)`);
+    if (this.playbackMode === 'realtime') {
+      // Clear queue when switching to realtime
+      this.stateQueue = [];
+      this.isPlayingBack = false;
+      this.pendingGameOver = null; // Clear any pending game over
+      this.pendingNewGame = null; // Clear any pending new game
+      if (this.playbackInterval) {
+        clearTimeout(this.playbackInterval);
+        this.playbackInterval = null;
+      }
+      document.getElementById('pendingActions').textContent = 'Real-time mode';
+
+      btn.textContent = 'Real-time Mode';
+      btn.style.background = '#2196F3';
+      document.getElementById('fpsBtn').disabled = true;
+      document.getElementById('fpsBtn').style.opacity = '0.5';
+      console.log('Switched to real-time mode (30 FPS)');
+
+      // Immediately show current state
+      if (this.gameState) {
+        this.renderer.render(this.gameState);
+      }
     } else {
-      btn.textContent = 'Enable Throttle';
+      btn.textContent = 'Playback Mode';
       btn.style.background = '#4CAF50';
-      console.log('Render throttling disabled (unlimited FPS)');
+      document.getElementById('fpsBtn').disabled = false;
+      document.getElementById('fpsBtn').style.opacity = '1';
+      document.getElementById('pendingActions').textContent = '0 actions queued';
+      console.log(`Switched to playback mode (${this.playbackFPS} FPS)`);
     }
   }
 
   cycleFPS() {
-    if (this.role !== 'admin') return;
+    // FPS control only for queue mode
+    if (this.playbackMode === 'realtime') return;
 
     // Cycle through FPS options: 1, 2, 5, 10, 20
     const fpsOptions = [1, 2, 5, 10, 20];
     const currentIndex = fpsOptions.indexOf(this.playbackFPS);
     const nextIndex = (currentIndex + 1) % fpsOptions.length;
     this.playbackFPS = fpsOptions[nextIndex];
-    this.MIN_RENDER_INTERVAL = 1000 / this.playbackFPS;
 
     const btn = document.getElementById('fpsBtn');
-    btn.textContent = `Playback: ${this.playbackFPS} FPS`;
+    btn.textContent = `Speed: ${this.playbackFPS} FPS`;
     console.log(`Playback FPS changed to ${this.playbackFPS}`);
 
-    // Clear any pending playback with old timing
-    if (this.isPlayingBack) {
-      this.stateQueue = [];
-      this.isPlayingBack = false;
-      document.getElementById('pendingActions').textContent = '0 actions queued';
-    }
+    // Don't interrupt playback, just update the speed for next interval
+    // The new FPS will take effect on the next scheduled render
   }
 }
 

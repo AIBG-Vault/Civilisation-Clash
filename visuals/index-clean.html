@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Civilization Clash</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      :root {
+        --bg-primary: #0f0f0f;
+        --bg-secondary: #1a1a1a;
+        --bg-tertiary: #242424;
+        --border: #333;
+        --text-primary: #e5e5e5;
+        --text-secondary: #999;
+        --text-tertiary: #666;
+        --accent-blue: #3b82f6;
+        --accent-red: #ef4444;
+        --accent-green: #10b981;
+        --accent-amber: #f59e0b;
+        --radius: 6px;
+        --shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+      }
+
+      body {
+        font-family:
+          'Inter',
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        line-height: 1.6;
+        overflow-x: hidden;
+      }
+
+      .app-container {
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      /* Sidebar */
+      .sidebar {
+        width: 320px;
+        background: var(--bg-secondary);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+
+      .sidebar-section {
+        padding: 20px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .sidebar-section:last-child {
+        border-bottom: none;
+      }
+
+      .section-title {
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-secondary);
+        margin-bottom: 12px;
+      }
+
+      /* Main Content */
+      .main-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      /* Top Bar */
+      .topbar {
+        height: 60px;
+        background: var(--bg-secondary);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 24px;
+      }
+
+      .connection-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--text-tertiary);
+      }
+
+      .status-dot.connected {
+        background: var(--accent-green);
+      }
+
+      .turn-indicator {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .team-scores {
+        display: flex;
+        gap: 24px;
+      }
+
+      .team-score {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .team-label {
+        font-size: 12px;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+      }
+
+      .team-value {
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 500;
+        font-size: 18px;
+      }
+
+      .team-score.blue .team-value {
+        color: var(--accent-blue);
+      }
+
+      .team-score.red .team-value {
+        color: var(--accent-red);
+      }
+
+      /* Canvas Area */
+      .canvas-container {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg-primary);
+        padding: 24px;
+        position: relative;
+      }
+
+      .canvas-wrapper {
+        position: relative;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px;
+        box-shadow: var(--shadow);
+      }
+
+      canvas {
+        display: block;
+        border-radius: 4px;
+      }
+
+      #uiCanvas {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        pointer-events: all;
+      }
+
+      /* Bottom Panel */
+      .bottom-panel {
+        height: 180px;
+        background: var(--bg-secondary);
+        border-top: 1px solid var(--border);
+        display: flex;
+      }
+
+      .bottom-section {
+        flex: 1;
+        padding: 20px;
+        border-right: 1px solid var(--border);
+      }
+
+      .bottom-section:last-child {
+        border-right: none;
+      }
+
+      /* Buttons */
+      .btn {
+        width: 100%;
+        padding: 10px 16px;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-bottom: 8px;
+      }
+
+      .btn:hover:not(:disabled) {
+        background: #2a2a2a;
+        border-color: #444;
+      }
+
+      .btn:active:not(:disabled) {
+        transform: translateY(1px);
+      }
+
+      .btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        background: var(--accent-blue);
+        border-color: var(--accent-blue);
+        color: white;
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        background: #2563eb;
+        border-color: #2563eb;
+      }
+
+      .btn-success {
+        background: var(--accent-green);
+        border-color: var(--accent-green);
+        color: white;
+      }
+
+      .btn-success:hover:not(:disabled) {
+        background: #059669;
+        border-color: #059669;
+      }
+
+      .btn-danger {
+        background: var(--accent-red);
+        border-color: var(--accent-red);
+        color: white;
+      }
+
+      .btn-danger:hover:not(:disabled) {
+        background: #dc2626;
+        border-color: #dc2626;
+      }
+
+      .btn-group {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .btn-sm {
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+
+      /* Info Cards */
+      .info-card {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+
+      .stat-grid {
+        display: grid;
+        gap: 8px;
+      }
+
+      .stat-item {
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+      }
+
+      .stat-label {
+        color: var(--text-secondary);
+      }
+
+      .stat-value {
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 500;
+      }
+
+      /* Selected Info */
+      .selected-info {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px;
+        min-height: 48px;
+        font-size: 13px;
+        color: var(--text-secondary);
+      }
+
+      /* Admin Panel */
+      .admin-panel {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px;
+        margin-top: 12px;
+      }
+
+      .admin-controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      /* Legend */
+      .legend-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+        font-size: 13px;
+      }
+
+      .legend-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        margin-right: 10px;
+        border: 1px solid var(--border);
+      }
+
+      /* Modal */
+      #gameOver {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 32px;
+        text-align: center;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+        z-index: 1000;
+      }
+
+      #gameOverText {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 16px;
+      }
+
+      .modal-subtitle {
+        font-size: 14px;
+        color: var(--text-secondary);
+      }
+
+      /* Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: var(--bg-primary);
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+
+      ::-webkit-scrollbar-thumb:hover {
+        background: #444;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <!-- Connection -->
+        <div class="sidebar-section">
+          <div class="section-title">Connection</div>
+          <button id="connectBtn" class="btn btn-success">Connect to Server</button>
+        </div>
+
+        <!-- Team Statistics -->
+        <div class="sidebar-section">
+          <div class="section-title">Team Statistics</div>
+
+          <div class="info-card" style="border-left: 3px solid var(--accent-blue)">
+            <div class="stat-grid">
+              <div class="stat-item">
+                <span class="stat-label">Blue Team</span>
+                <span class="stat-value" style="color: var(--accent-blue)">Team 0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Territory Points</span>
+                <span class="stat-value" id="tp-detail-0">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Income</span>
+                <span class="stat-value">+<span id="income-0">0</span></span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Units</span>
+                <span class="stat-value" id="units-0">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Territory</span>
+                <span class="stat-value"><span id="territory-detail-0">0</span> tiles</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="info-card" style="border-left: 3px solid var(--accent-red)">
+            <div class="stat-grid">
+              <div class="stat-item">
+                <span class="stat-label">Red Team</span>
+                <span class="stat-value" style="color: var(--accent-red)">Team 1</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Territory Points</span>
+                <span class="stat-value" id="tp-detail-1">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Income</span>
+                <span class="stat-value">+<span id="income-1">0</span></span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Units</span>
+                <span class="stat-value" id="units-1">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Territory</span>
+                <span class="stat-value"><span id="territory-detail-1">0</span> tiles</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Terrain Legend -->
+        <div class="sidebar-section">
+          <div class="section-title">Terrain Types</div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #90ee90"></div>
+            <span>Field (0.5 TP/turn)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #8b7355"></div>
+            <span>Mountain (Impassable)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #4682b4"></div>
+            <span>Water (Impassable)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #ffd700"></div>
+            <span>Selected Unit</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: rgba(0, 255, 0, 0.3)"></div>
+            <span>Possible Moves</span>
+          </div>
+        </div>
+
+        <!-- Playback Controls -->
+        <div class="sidebar-section">
+          <div class="section-title">Playback Settings</div>
+          <div class="btn-group">
+            <button id="playbackModeBtn" class="btn btn-sm" style="background: #4caf50">
+              Playback Mode
+            </button>
+            <button id="fpsBtn" class="btn btn-sm">Speed: 2 FPS</button>
+          </div>
+          <div style="margin-top: 8px; font-size: 11px; color: var(--text-tertiary)">
+            Playback: Queue states | Real-time: Live view
+          </div>
+        </div>
+
+        <!-- Server Admin -->
+        <div class="sidebar-section">
+          <div class="section-title">Server Administration</div>
+          <div id="adminLoginSection">
+            <input
+              type="password"
+              id="adminPassword"
+              placeholder="Admin password"
+              style="
+                width: 100%;
+                padding: 8px;
+                margin-bottom: 8px;
+                background: var(--bg-tertiary);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                color: var(--text-primary);
+                font-size: 13px;
+              "
+            />
+            <button id="adminLoginBtn" class="btn btn-sm">Login as Admin</button>
+          </div>
+
+          <div class="admin-panel" id="adminControls" style="display: none">
+            <div
+              id="adminStatus"
+              style="margin-bottom: 8px; color: var(--accent-green); font-size: 12px"
+            >
+              ✓ Admin authenticated
+            </div>
+            <button id="adminTimeoutBtn" class="btn btn-sm" style="width: 100%; margin-bottom: 8px">
+              Enable Bot Mode (250ms)
+            </button>
+            <button id="adminResetBtn" class="btn btn-sm btn-danger" style="width: 100%">
+              Reset Server
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <!-- Top Bar -->
+        <header class="topbar">
+          <div class="connection-status">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="status">Disconnected</span>
+          </div>
+
+          <div class="turn-indicator">
+            Turn <span id="turn">0</span> / <span id="maxTurns">50</span>
+          </div>
+
+          <div class="team-scores">
+            <div class="team-score blue">
+              <span class="team-label">Blue</span>
+              <span class="team-value" id="tp-0">0</span>
+              <span class="stat-label">TP</span>
+            </div>
+            <div class="team-score red">
+              <span class="team-label">Red</span>
+              <span class="team-value" id="tp-1">0</span>
+              <span class="stat-label">TP</span>
+            </div>
+          </div>
+        </header>
+
+        <!-- Canvas -->
+        <div class="canvas-container">
+          <div class="canvas-wrapper">
+            <canvas id="gameCanvas"></canvas>
+            <canvas id="uiCanvas"></canvas>
+          </div>
+        </div>
+
+        <!-- Bottom Panel -->
+        <div class="bottom-panel">
+          <!-- Actions -->
+          <div class="bottom-section">
+            <div class="section-title">Actions</div>
+            <div class="btn-group">
+              <button id="buildUnitBtn" class="btn btn-primary" disabled>Build Unit (20)</button>
+              <button id="expandBtn" class="btn" disabled>Expand (5)</button>
+            </div>
+            <button id="endTurnBtn" class="btn btn-danger" disabled>End Turn</button>
+            <button id="botModeBtn" class="btn">Enable Bot</button>
+          </div>
+
+          <!-- Selection Info -->
+          <div class="bottom-section">
+            <div class="section-title">Selection</div>
+            <div class="selected-info" id="selectedInfo">
+              Click on the map to select units or tiles
+            </div>
+            <div class="selected-info" id="pendingActions" style="margin-top: 8px">
+              0 actions queued
+            </div>
+          </div>
+
+          <!-- Map Info -->
+          <div class="bottom-section">
+            <div class="section-title">Map Information</div>
+            <div class="stat-grid">
+              <div class="stat-item">
+                <span class="stat-label">Map Size</span>
+                <span class="stat-value">15 × 10</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Blue Territory</span>
+                <span class="stat-value" id="territory-0">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Red Territory</span>
+                <span class="stat-value" id="territory-1">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="gameOver">
+      <div id="gameOverText">Game Over</div>
+      <div class="modal-subtitle">Restarting in 5 seconds...</div>
+    </div>
+
+    <script src="game-renderer.js"></script>
+    <script src="game-client.js"></script>
+    <script>
+      // Update status indicator
+      document.addEventListener('DOMContentLoaded', () => {
+        const statusEl = document.getElementById('status');
+        const dotEl = document.getElementById('statusDot');
+
+        // Watch for status changes
+        const observer = new MutationObserver(() => {
+          if (statusEl.textContent.includes('Connected')) {
+            dotEl.classList.add('connected');
+          } else {
+            dotEl.classList.remove('connected');
+          }
+        });
+
+        observer.observe(statusEl, { childList: true, characterData: true, subtree: true });
+      });
+    </script>
+  </body>
+</html>

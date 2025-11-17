@@ -230,6 +230,7 @@ class GameServer {
       case 'RESET_GAME':
         console.log('Admin requested game reset');
         this.reset();
+        // State will be broadcast by reset() itself
         break;
     }
   }
@@ -349,8 +350,12 @@ class GameServer {
       }
     });
 
-    // Reset after delay
-    setTimeout(() => this.reset(), 5000);
+    // Reset after delay and notify clients
+    setTimeout(() => {
+      this.reset();
+      // Broadcast new game state to all connected clients
+      this.broadcastGameState();
+    }, 5000);
   }
 
   handleDisconnect(connectionId) {
@@ -367,7 +372,9 @@ class GameServer {
 
   reset() {
     console.log('Resetting server');
-    this.connections.clear();
+
+    // Don't clear connections - keep clients connected
+    // Just clear pending actions
     this.pendingActions.clear();
 
     if (this.turnTimer) {
@@ -375,7 +382,10 @@ class GameServer {
       this.turnTimer = null;
     }
 
-    this.stopHeartbeat();
+    // Don't stop heartbeat if clients are still connected
+    if (this.connections.size === 0) {
+      this.stopHeartbeat();
+    }
 
     // Reset to default timeout
     this.timeoutEnabled = true;
@@ -383,6 +393,12 @@ class GameServer {
 
     // Reinitialize game for next players
     this.initializeGame();
+
+    // Broadcast new game state to all connected clients
+    if (this.connections.size > 0) {
+      console.log('Broadcasting new game state to', this.connections.size, 'connected clients');
+      this.broadcastGameState();
+    }
   }
 
   startHeartbeat() {

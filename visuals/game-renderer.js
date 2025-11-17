@@ -80,7 +80,9 @@ class GameRenderer {
   }
 
   clearCanvas() {
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    // Fill with dark background instead of clearing to transparent
+    this.ctx.fillStyle = '#1a1a1a';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
   drawTerrain(map) {
