@@ -401,7 +401,10 @@
         <!-- Connection -->
         <div class="sidebar-section">
           <div class="section-title">Connection</div>
-          <button id="connectBtn" class="btn btn-success">Connect to Server</button>
+          <button id="connectBtn" class="btn btn-success">
+            Connect to server <br />
+            (manual play)
+          </button>
         </div>
 
         <!-- Team Statistics -->
@@ -497,44 +500,6 @@
             Playback: Queue states | Real-time: Live view
           </div>
         </div>
-
-        <!-- Server Admin -->
-        <div class="sidebar-section">
-          <div class="section-title">Server Administration</div>
-          <div id="adminLoginSection">
-            <input
-              type="password"
-              id="adminPassword"
-              placeholder="Admin password"
-              style="
-                width: 100%;
-                padding: 8px;
-                margin-bottom: 8px;
-                background: var(--bg-tertiary);
-                border: 1px solid var(--border);
-                border-radius: var(--radius);
-                color: var(--text-primary);
-                font-size: 13px;
-              "
-            />
-            <button id="adminLoginBtn" class="btn btn-sm">Login as Admin</button>
-          </div>
-
-          <div class="admin-panel" id="adminControls" style="display: none">
-            <div
-              id="adminStatus"
-              style="margin-bottom: 8px; color: var(--accent-green); font-size: 12px"
-            >
-              ✓ Admin authenticated
-            </div>
-            <button id="adminTimeoutBtn" class="btn btn-sm" style="width: 100%; margin-bottom: 8px">
-              Enable Bot Mode (250ms)
-            </button>
-            <button id="adminResetBtn" class="btn btn-sm btn-danger" style="width: 100%">
-              Reset Server
-            </button>
-          </div>
-        </div>
       </aside>
 
       <!-- Main Content -->
@@ -625,7 +590,7 @@
     </div>
 
     <script src="game-renderer.js"></script>
-    <script src="game-client.js"></script>
+    <script src="manual-game-client.js"></script>
     <script>
       // Update status indicator
       document.addEventListener('DOMContentLoaded', () => {

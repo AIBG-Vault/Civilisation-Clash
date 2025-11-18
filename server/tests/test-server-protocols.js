@@ -48,7 +48,7 @@ describe('Server Protocol Tests', () => {
 
   beforeEach(async () => {
     // Start server on test port
-    serverProcess = spawn('node', ['server-v2.js'], {
+    serverProcess = spawn('node', ['../server-v2.js'], {
       cwd: process.cwd(),
       env: { ...process.env, PORT: '8081' }
     });
@@ -112,29 +112,14 @@ describe('Server Protocol Tests', () => {
     test('should accept valid team passwords', async () => {
       const { ws: ws0, authResponse: auth0 } = await createAuthenticatedClient('password0', 'Team0Bot');
       assert.strictEqual(auth0.teamId, 0);
-      assert.strictEqual(auth0.role, 'player');
 
       const { ws: ws1, authResponse: auth1 } = await createAuthenticatedClient('password1', 'Team1Bot');
       assert.strictEqual(auth1.teamId, 1);
-      assert.strictEqual(auth1.role, 'player');
 
       ws0.close();
       ws1.close();
     });
 
-    test('should accept spectator password', async () => {
-      const { ws, authResponse } = await createAuthenticatedClient('spectator', 'Spectator');
-      assert.strictEqual(authResponse.teamId, -1);
-      assert.strictEqual(authResponse.role, 'spectator');
-      ws.close();
-    });
-
-    test('should accept admin password', async () => {
-      const { ws, authResponse } = await createAuthenticatedClient('admin123', 'Admin');
-      assert.strictEqual(authResponse.teamId, -1);
-      assert.strictEqual(authResponse.role, 'admin');
-      ws.close();
-    });
   });
 
   describe('Game State Tests', () => {
@@ -147,16 +132,6 @@ describe('Server Protocol Tests', () => {
       assert(gameState.state.teams);
       assert(gameState.state.units);
       assert.strictEqual(gameState.yourTeamId, 0);
-
-      ws.close();
-    });
-
-    test('should send game state to spectator without team assignment', async () => {
-      const { ws } = await createAuthenticatedClient('spectator');
-
-      const gameState = await waitForMessage(ws, 'GAME_STATE');
-      assert(gameState.state);
-      assert.strictEqual(gameState.yourTeamId, -1);
 
       ws.close();
     });
@@ -216,81 +191,6 @@ describe('Server Protocol Tests', () => {
       assert.strictEqual(result, 'timeout');
 
       ws0.close();
-    });
-
-    test('should allow spectators to receive updates but not submit actions', async () => {
-      const { ws: player } = await createAuthenticatedClient('password0');
-      const { ws: spectator } = await createAuthenticatedClient('spectator');
-
-      // Spectator tries to submit actions
-      spectator.send(JSON.stringify({
-        type: 'SUBMIT_ACTIONS',
-        actions: [{ type: 'PASS' }]
-      }));
-
-      // Should not affect game
-      const timeout = new Promise(resolve => setTimeout(() => resolve('timeout'), 500));
-      const message = Promise.race([
-        waitForMessage(player, 'GAME_STATE'),
-        timeout
-      ]);
-
-      const result = await message;
-      assert.strictEqual(result, 'timeout');
-
-      player.close();
-      spectator.close();
-    });
-  });
-
-  describe('Admin Command Tests', () => {
-    test('should allow admin to disable timeout', async () => {
-      const { ws: admin } = await createAuthenticatedClient('admin123');
-
-      admin.send(JSON.stringify({
-        type: 'ADMIN_COMMAND',
-        action: 'DISABLE_TIMEOUT'
-      }));
-
-      const adminMsg = await waitForMessage(admin, 'ADMIN_MESSAGE');
-      assert(adminMsg.message.includes('disabled'));
-
-      admin.close();
-    });
-
-    test('should allow admin to enable bot timeout', async () => {
-      const { ws: admin } = await createAuthenticatedClient('admin123');
-
-      admin.send(JSON.stringify({
-        type: 'ADMIN_COMMAND',
-        action: 'ENABLE_BOT_TIMEOUT'
-      }));
-
-      const adminMsg = await waitForMessage(admin, 'ADMIN_MESSAGE');
-      assert(adminMsg.message.includes('250ms'));
-
-      admin.close();
-    });
-
-    test('should not allow players to use admin commands', async () => {
-      const { ws: player } = await createAuthenticatedClient('password0');
-
-      player.send(JSON.stringify({
-        type: 'ADMIN_COMMAND',
-        action: 'DISABLE_TIMEOUT'
-      }));
-
-      // Should not receive admin message
-      const timeout = new Promise(resolve => setTimeout(() => resolve('timeout'), 500));
-      const message = Promise.race([
-        waitForMessage(player, 'ADMIN_MESSAGE'),
-        timeout
-      ]);
-
-      const result = await message;
-      assert.strictEqual(result, 'timeout');
-
-      player.close();
     });
   });
 
@@ -403,21 +303,6 @@ describe('Server Protocol Tests', () => {
   });
 
   describe('Multiple Clients Per Team Tests', () => {
-    test('should allow multiple spectators', async () => {
-      const { ws: spec1 } = await createAuthenticatedClient('spectator', 'Spec1');
-      const { ws: spec2 } = await createAuthenticatedClient('spectator', 'Spec2');
-
-      // Both should receive game state
-      const state1 = await waitForMessage(spec1, 'GAME_STATE');
-      const state2 = await waitForMessage(spec2, 'GAME_STATE');
-
-      assert(state1.state);
-      assert(state2.state);
-
-      spec1.close();
-      spec2.close();
-    });
-
     test('should handle multiple players on same team', async () => {
       const { ws: player1a } = await createAuthenticatedClient('password0', 'Team0-A');
       const { ws: player1b } = await createAuthenticatedClient('password0', 'Team0-B');

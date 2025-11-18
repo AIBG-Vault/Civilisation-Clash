@@ -11,7 +11,6 @@ class GameClient {
     this.botMode = false;
     this.expandMode = false;
     this.selectedTile = null;
-    this.role = null; // 'player', 'admin', or 'spectator'
     this.timeoutEnabled = true;
     this.pendingExpansions = new Set(); // Track tiles that will be expanded this turn
 
@@ -45,18 +44,8 @@ class GameClient {
     document.getElementById('buildUnitBtn').onclick = () => this.buildUnit();
     document.getElementById('expandBtn').onclick = () => this.expandTerritory();
     document.getElementById('botModeBtn').onclick = () => this.toggleBotMode();
-    document.getElementById('adminLoginBtn').onclick = () => this.adminLogin();
-    document.getElementById('adminTimeoutBtn').onclick = () => this.toggleTimeout();
-    document.getElementById('adminResetBtn').onclick = () => this.resetServer();
     document.getElementById('playbackModeBtn').onclick = () => this.togglePlaybackMode();
     document.getElementById('fpsBtn').onclick = () => this.cycleFPS();
-
-    // Admin password field enter key support
-    document.getElementById('adminPassword').onkeypress = (e) => {
-      if (e.key === 'Enter') {
-        this.adminLogin();
-      }
-    };
 
     this.renderer.onTileClick = (x, y) => this.handleTileClick(x, y);
   }
@@ -107,7 +96,6 @@ class GameClient {
     this.ws.onclose = () => {
       console.log('Disconnected from server');
       this.isConnected = false;
-      this.role = null;
       this.myTeamId = -1;
       document.getElementById('connectBtn').textContent = 'Connect to Server';
       document.getElementById('connectBtn').disabled = false;
@@ -115,7 +103,6 @@ class GameClient {
       document.getElementById('buildUnitBtn').disabled = true;
       document.getElementById('expandBtn').disabled = true;
       document.getElementById('status').textContent = 'Disconnected';
-      // Don't hide admin controls on game disconnect - admin is separate
     };
   }
 
@@ -123,39 +110,18 @@ class GameClient {
     switch (message.type) {
       case 'AUTH_SUCCESS':
         this.myTeamId = message.teamId;
-        this.role = message.role;
         this.isConnected = true;
 
-        console.log(`Authenticated as ${this.role} (Team ${this.myTeamId})`);
+        console.log(`Authenticated as Team ${this.myTeamId}`);
         document.getElementById('connectBtn').textContent = 'Disconnect';
         document.getElementById('connectBtn').disabled = false;
 
-        if (this.role === 'spectator') {
-          document.getElementById('status').textContent = 'Connected - Spectating';
-          // Disable all controls for spectators
-          document.getElementById('endTurnBtn').disabled = true;
-          document.getElementById('buildUnitBtn').disabled = true;
-          document.getElementById('expandBtn').disabled = true;
-          document.getElementById('botModeBtn').disabled = true;
-        } else if (this.role === 'admin') {
-          // If connected as admin for gameplay, they're also a player
-          document.getElementById('status').textContent = 'Connected - Admin Playing';
-          // Game controls enabled
-          document.getElementById('endTurnBtn').disabled = false;
-          document.getElementById('buildUnitBtn').disabled = false;
-          document.getElementById('expandBtn').disabled = false;
-          // Auto-authenticate admin panel
-          if (!this.isAdmin) {
-            this.adminAutoAuth('admin123');
-          }
-        } else if (this.role === 'player') {
-          document.getElementById('status').textContent = `Connected - Playing as ${
-            this.myTeamId === 0 ? 'Blue Team' : 'Red Team'
-          }`;
-          document.getElementById('endTurnBtn').disabled = false;
-          document.getElementById('buildUnitBtn').disabled = false;
-          document.getElementById('expandBtn').disabled = false;
-        }
+        document.getElementById('status').textContent = `Connected - Playing as ${
+          this.myTeamId === 0 ? 'Blue Team' : 'Red Team'
+        }`;
+        document.getElementById('endTurnBtn').disabled = false;
+        document.getElementById('buildUnitBtn').disabled = false;
+        document.getElementById('expandBtn').disabled = false;
         break;
 
       case 'GAME_STATE':
@@ -177,8 +143,8 @@ class GameClient {
         }
 
         this.gameState = message.state;
-        // Update teamId only if we're a player
-        if (this.role === 'player' && message.yourTeamId >= 0) {
+        // Update teamId from server
+        if (message.yourTeamId >= 0) {
           this.myTeamId = message.yourTeamId;
         }
         this.renderer.gameState = this.gameState;
@@ -206,8 +172,8 @@ class GameClient {
           if (this.botMode) {
             this.toggleBotMode(); // Stop bot when game ends
           }
-        } else if (this.botMode && this.role === 'player' && !isNewGame) {
-          // Bot responds immediately to new game state (only for players)
+        } else if (this.botMode && !isNewGame) {
+          // Bot responds immediately to new game state
           this.makeBotMove();
         }
         break;
@@ -227,15 +193,15 @@ class GameClient {
         alert(`Error: ${message.message}`);
         break;
 
-      case 'ADMIN_MESSAGE':
-        console.log('Admin:', message.message);
+      case 'GAME_CONTROL_MESSAGE':
+        console.log('Game control:', message.message);
         document.getElementById('status').textContent += ` - ${message.message}`;
         break;
     }
   }
 
   handleTileClick(x, y) {
-    if (!this.gameState || this.gameState.gameOver || this.role === 'spectator') return;
+    if (!this.gameState || this.gameState.gameOver) return;
 
     const tile = this.gameState.map.find((t) => t.x === x && t.y === y);
     if (!tile) return;
@@ -529,7 +495,7 @@ class GameClient {
             this.throttledRender();
 
             // Re-enable bot if it was active
-            if (this.botMode && this.role === 'player') {
+            if (this.botMode) {
               this.makeBotMove();
             }
 
@@ -544,7 +510,7 @@ class GameClient {
         this.updateUI();
         this.throttledRender();
 
-        if (this.botMode && this.role === 'player') {
+        if (this.botMode) {
           this.makeBotMove();
         }
 
@@ -737,139 +703,6 @@ class GameClient {
     }
 
     return moves;
-  }
-
-  adminLogin() {
-    // Get password from input field
-    const passwordInput = document.getElementById('adminPassword');
-    const password = passwordInput.value;
-
-    if (!password) {
-      alert('Please enter the admin password');
-      return;
-    }
-
-    this.adminAutoAuth(password);
-    // Clear password field
-    passwordInput.value = '';
-  }
-
-  adminAutoAuth(password) {
-    // Create a separate admin connection for sending commands
-    const adminWs = new WebSocket('ws://localhost:8080');
-
-    adminWs.onopen = () => {
-      // Send AUTH message with admin password
-      adminWs.send(
-        JSON.stringify({
-          type: 'AUTH',
-          password: password,
-          name: 'Admin Control Panel',
-        })
-      );
-    };
-
-    adminWs.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-
-      if (message.type === 'AUTH_SUCCESS') {
-        if (message.role === 'admin') {
-          // Success - store admin connection
-          this.adminWs = adminWs;
-          this.isAdmin = true;
-
-          // Update UI
-          document.getElementById('adminLoginSection').style.display = 'none';
-          document.getElementById('adminControls').style.display = 'block';
-          document.getElementById('adminStatus').textContent = 'Admin authenticated';
-          document.getElementById('adminStatus').style.color = '#4CAF50';
-
-          console.log('Admin authentication successful');
-        } else {
-          // Not admin password
-          if (password !== 'admin123') {
-            // Only alert if not auto-auth
-            alert('Invalid admin password');
-          }
-          adminWs.close();
-        }
-      } else if (message.type === 'ERROR') {
-        if (password !== 'admin123') {
-          // Only alert if not auto-auth
-          alert('Admin authentication failed: ' + message.message);
-        }
-        adminWs.close();
-      } else if (message.type === 'ADMIN_MESSAGE') {
-        // Show admin command feedback
-        document.getElementById('adminStatus').textContent = message.message;
-        setTimeout(() => {
-          document.getElementById('adminStatus').textContent = 'Admin authenticated';
-        }, 3000);
-      }
-    };
-
-    adminWs.onerror = () => {
-      if (password !== 'admin123') {
-        // Only alert if not auto-auth
-        alert('Failed to connect for admin authentication');
-      }
-    };
-
-    adminWs.onclose = () => {
-      if (this.adminWs === adminWs) {
-        // Admin connection lost
-        this.adminWs = null;
-        this.isAdmin = false;
-        document.getElementById('adminLoginSection').style.display = 'block';
-        document.getElementById('adminControls').style.display = 'none';
-        document.getElementById('adminStatus').textContent = '';
-      }
-    };
-  }
-
-  toggleTimeout() {
-    if (!this.isAdmin || !this.adminWs || this.adminWs.readyState !== WebSocket.OPEN) {
-      alert('Admin authentication required');
-      return;
-    }
-
-    this.timeoutEnabled = !this.timeoutEnabled;
-    const action = this.timeoutEnabled ? 'ENABLE_BOT_TIMEOUT' : 'DISABLE_TIMEOUT';
-
-    this.adminWs.send(
-      JSON.stringify({
-        type: 'ADMIN_COMMAND',
-        action: action,
-      })
-    );
-
-    const btn = document.getElementById('adminTimeoutBtn');
-    if (this.timeoutEnabled) {
-      btn.textContent = 'Disable Timeout';
-      btn.style.background = '#f44';
-      console.log('Bot timeout enabled (250ms)');
-    } else {
-      btn.textContent = 'Enable Bot Mode (250ms)';
-      btn.style.background = '#4CAF50';
-      console.log('Timeout disabled');
-    }
-  }
-
-  resetServer() {
-    if (!this.isAdmin || !this.adminWs || this.adminWs.readyState !== WebSocket.OPEN) {
-      alert('Admin authentication required');
-      return;
-    }
-
-    if (confirm('Are you sure you want to reset the server? This will end the current game.')) {
-      this.adminWs.send(
-        JSON.stringify({
-          type: 'ADMIN_COMMAND',
-          action: 'RESET_GAME',
-        })
-      );
-      console.log('Server reset requested');
-    }
   }
 
   togglePlaybackMode() {

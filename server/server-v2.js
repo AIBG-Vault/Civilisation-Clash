@@ -2,8 +2,19 @@ import { WebSocketServer } from 'ws';
 import { GameV2 } from '../logic/game-v2.js';
 import fs from 'fs';
 
+// Parse command line arguments
+const args = process.argv.slice(2);
+const hasDisableFlag = args.includes('--disable-client-override');
+const hasEnableFlag = args.includes('--enable-client-override');
+
+// Server configuration
+const SERVER_CONFIG = {
+  // Default to true unless explicitly disabled
+  clientCanOverrideOptions: hasDisableFlag ? false : (hasEnableFlag ? true : true),
+};
+
 // Load passwords
-let passwords = { teams: {}, admin: 'admin123', spectator: 'spectator' };
+let passwords = { teams: {} };
 try {
   passwords = JSON.parse(fs.readFileSync('./passwords.json', 'utf-8'));
 } catch (err) {
@@ -27,11 +38,20 @@ class GameServer {
 
   initServer() {
     this.wss = new WebSocketServer({ port: this.port });
+    console.log('='.repeat(60));
     console.log(`Game server V2 running on ws://localhost:${this.port}`);
     console.log('Mode: 30s timeout (manual play)');
-    console.log('Admin commands:');
-    console.log('  - ENABLE_BOT_TIMEOUT: Switch to 250ms timeout for fast bot play');
-    console.log('  - DISABLE_TIMEOUT: Disable timeout completely');
+    console.log(`Client override options: ${SERVER_CONFIG.clientCanOverrideOptions ? 'ENABLED' : 'DISABLED'}`);
+    console.log('');
+    console.log('To disable client overrides, start with:');
+    console.log('  node server-v2.js --disable-client-override');
+    console.log('='.repeat(60));
+    if (SERVER_CONFIG.clientCanOverrideOptions) {
+      console.log('Game control commands available from clients:');
+      console.log('  - ENABLE_BOT_TIMEOUT: Switch to 250ms timeout for fast bot play');
+      console.log('  - DISABLE_TIMEOUT: Disable timeout completely');
+      console.log('  - RESET_GAME: Reset the game state');
+    }
 
     // Initialize game immediately so map is ready for all connections
     this.initializeGame();
@@ -81,18 +101,13 @@ class GameServer {
   handleAuth(connectionId, ws, authMsg) {
     const { password, name = 'Unknown', teamId } = authMsg;
 
-    // Check password type
-    let role = null;
+    // Check password and assign team
     let assignedTeamId = -1;
 
-    if (password === passwords.admin) {
-      role = 'admin';
-    } else if (password === passwords.spectator) {
-      role = 'spectator';
-    } else if (password === passwords.teams.team0 || password === passwords.teams.team1) {
-      role = 'player';
-      // Get team ID from password
-      assignedTeamId = password === passwords.teams.team0 ? 0 : 1;
+    if (password === passwords.teams.team0) {
+      assignedTeamId = 0;
+    } else if (password === passwords.teams.team1) {
+      assignedTeamId = 1;
     } else {
       ws.send(JSON.stringify({ type: 'ERROR', message: 'Invalid password' }));
       ws.close();
@@ -103,7 +118,6 @@ class GameServer {
       id: connectionId,
       ws: ws,
       teamId: assignedTeamId,
-      role: role,
       name: name,
       isAlive: true,
     };
@@ -115,11 +129,10 @@ class GameServer {
       JSON.stringify({
         type: 'AUTH_SUCCESS',
         teamId: assignedTeamId,
-        role: role,
       })
     );
 
-    console.log(`${role} '${name}' connected as ${assignedTeamId >= 0 ? `Team ${assignedTeamId}` : role}`);
+    console.log(`Player '${name}' connected as Team ${assignedTeamId}`);
 
     // Send current game state
     if (this.game) {
@@ -134,7 +147,7 @@ class GameServer {
     }
 
     // Start heartbeat when we have players
-    const playerCount = Array.from(this.connections.values()).filter(c => c.role === 'player').length;
+    const playerCount = this.connections.size;
     if (playerCount >= 2 && !this.heartbeatInterval) {
       this.startHeartbeat();
     }
@@ -177,16 +190,19 @@ class GameServer {
 
     switch (message.type) {
       case 'SUBMIT_ACTIONS':
-        // Only players can submit actions
-        if (connection.role === 'player') {
-          this.handleActions(connection.teamId, message.actions);
-        }
+        this.handleActions(connection.teamId, message.actions);
         break;
 
       case 'ADMIN_COMMAND':
-        // Only admins can execute admin commands
-        if (connection.role === 'admin') {
-          this.handleAdminCommand(message);
+      case 'GAME_CONTROL':
+        // Check if client overrides are enabled
+        if (SERVER_CONFIG.clientCanOverrideOptions) {
+          this.handleGameControl(message);
+        } else {
+          connection.ws.send(JSON.stringify({
+            type: 'ERROR',
+            message: 'Game control commands are disabled on this server'
+          }));
         }
         break;
 
@@ -199,14 +215,14 @@ class GameServer {
     }
   }
 
-  handleAdminCommand(command) {
-    // Handle admin commands (would need auth in production)
+  handleGameControl(command) {
+    // Handle game control commands (when client overrides are enabled)
     switch (command.action) {
       case 'DISABLE_TIMEOUT':
         this.timeoutEnabled = false;
         console.log('Timeout disabled for manual play');
         this.broadcast({
-          type: 'ADMIN_MESSAGE',
+          type: 'GAME_CONTROL_MESSAGE',
           message: 'Timeout disabled - manual play mode',
         });
         break;
@@ -216,7 +232,7 @@ class GameServer {
         this.turnTimeout = 250; // 250ms for fast bot play
         console.log('Bot timeout enabled: 250ms');
         this.broadcast({
-          type: 'ADMIN_MESSAGE',
+          type: 'GAME_CONTROL_MESSAGE',
           message: 'Bot timeout enabled - 250ms per turn',
         });
         break;
@@ -228,7 +244,7 @@ class GameServer {
         break;
 
       case 'RESET_GAME':
-        console.log('Admin requested game reset');
+        console.log('Game reset requested');
         this.reset();
         // State will be broadcast by reset() itself
         break;
@@ -247,9 +263,9 @@ class GameServer {
       this.turnTimer = null;
     }
 
-    // Get active player count (only count player connections, not spectators/admins)
+    // Get active player count
     const activePlayers = Array.from(this.connections.values()).filter(
-      c => c.role === 'player' && c.teamId >= 0
+      c => c.teamId >= 0
     );
 
     // Get unique teams that have players
