@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Civilization Clash - Split Horizontal Layout</title>
+    <style>
+      :root {
+        --bg: #f5f5f7;
+        --bg-card: #ffffff;
+        --text: #1d1d1f;
+        --text-muted: #86868b;
+        --border: #e5e5e5;
+        --shadow: rgba(0, 0, 0, 0.06);
+        --team-0: #0071e3;
+        --team-0-bg: rgba(0, 113, 227, 0.1);
+        --team-1: #ff6b35;
+        --team-1-bg: rgba(255, 107, 53, 0.1);
+        --grass: #e8f5e9;
+        --forest: #c8e6c9;
+        --mountain: #e0e0e0;
+        --water: #e3f2fd;
+        --monument: #fff3e0;
+        --success: #34c759;
+        --danger: #ff3b30;
+        --terminal-bg: #1e1e1e;
+        --terminal-text: #00ff00;
+      }
+
+      [data-theme='dark'] {
+        --bg: #1c1c1e;
+        --bg-card: #2c2c2e;
+        --text: #f5f5f7;
+        --text-muted: #98989d;
+        --border: #3a3a3c;
+        --shadow: rgba(0, 0, 0, 0.3);
+        --grass: #2d4a2d;
+        --forest: #1e3a1e;
+        --mountain: #3a3a3c;
+        --water: #1e3a4a;
+        --monument: #4a3a1e;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Top Header */
+      .header {
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--border);
+        padding: 8px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .header-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .logo {
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .connection-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+
+      .status-dot.connected {
+        background: var(--success);
+        box-shadow: 0 0 6px var(--success);
+      }
+      .status-dot.disconnected {
+        background: var(--danger);
+        box-shadow: 0 0 6px var(--danger);
+      }
+
+      .header-center {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .turn-info {
+        font-size: 13px;
+      }
+      .turn-info strong {
+        font-size: 16px;
+      }
+
+      .timer {
+        font-size: 20px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        padding: 4px 12px;
+        background: var(--bg);
+        border-radius: 6px;
+      }
+
+      .header-right {
+        display: flex;
+        gap: 6px;
+      }
+
+      .hdr-btn {
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        font-size: 12px;
+        cursor: pointer;
+        color: var(--text);
+      }
+
+      .hdr-btn:hover {
+        background: var(--border);
+      }
+
+      /* Board Area */
+      .board-area {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 16px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(14, 44px);
+        grid-template-rows: repeat(8, 44px);
+        gap: 1px;
+        background: var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+
+      .cell {
+        background: var(--grass);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      .cell:hover {
+        filter: brightness(0.95);
+      }
+      .cell.forest {
+        background: var(--forest);
+      }
+      .cell.mountain {
+        background: var(--mountain);
+      }
+      .cell.water {
+        background: var(--water);
+      }
+      .cell.monument {
+        background: var(--monument);
+      }
+      .cell.owned-0 {
+        box-shadow: inset 0 0 0 2px var(--team-0-bg);
+      }
+      .cell.owned-1 {
+        box-shadow: inset 0 0 0 2px var(--team-1-bg);
+      }
+
+      .cell-unit {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 600;
+        color: white;
+      }
+
+      .cell-unit.team-0 {
+        background: var(--team-0);
+      }
+      .cell-unit.team-1 {
+        background: var(--team-1);
+      }
+
+      /* Collapse Toggle */
+      .panel-toggle {
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%) translateY(50%);
+        z-index: 100;
+        width: 80px;
+        height: 24px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 12px 12px 0 0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+      }
+
+      /* Control Panel */
+      .control-panel {
+        background: var(--bg-card);
+        border-top: 1px solid var(--border);
+        height: 200px;
+        display: flex;
+        transition: height 0.3s;
+      }
+
+      .control-panel.collapsed {
+        height: 0;
+        overflow: hidden;
+      }
+
+      .panel-section {
+        flex: 1;
+        padding: 12px 16px;
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+      }
+
+      .panel-section:last-child {
+        border-right: none;
+      }
+
+      .section-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin-bottom: 10px;
+        font-weight: 600;
+      }
+
+      /* Player Stats Section */
+      .player-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .player-name {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .player-name.team-0 {
+        color: var(--team-0);
+      }
+      .player-name.team-1 {
+        color: var(--team-1);
+      }
+
+      .player-status {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 10px;
+      }
+
+      .stats-row {
+        display: flex;
+        gap: 12px;
+      }
+
+      .stat-item {
+        text-align: center;
+      }
+      .stat-val {
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .stat-lbl {
+        font-size: 9px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+      }
+
+      /* Actions Section */
+      .action-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+
+      .action-btn {
+        padding: 10px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
+        font-size: 12px;
+        cursor: pointer;
+        text-align: center;
+        color: var(--text);
+      }
+
+      .action-btn:hover {
+        border-color: var(--team-0);
+      }
+      .action-btn.primary {
+        background: var(--team-0);
+        color: white;
+        border: none;
+        grid-column: span 2;
+      }
+
+      .action-cost {
+        font-size: 10px;
+        color: var(--text-muted);
+        display: block;
+      }
+      .action-btn.primary .action-cost {
+        color: rgba(255, 255, 255, 0.8);
+      }
+
+      /* Opponent Section */
+      .opponent-stats {
+        opacity: 0.8;
+      }
+
+      /* Log Section */
+      .log-container {
+        font-size: 11px;
+        max-height: 120px;
+        overflow-y: auto;
+      }
+
+      .log-line {
+        padding: 4px 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .log-turn {
+        color: var(--text-muted);
+        margin-right: 8px;
+      }
+
+      /* Terminal Overlay */
+      .terminal-overlay {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 200px;
+        background: var(--terminal-bg);
+        border-top: 2px solid #444;
+        transform: translateY(100%);
+        transition: transform 0.3s;
+        z-index: 1000;
+      }
+
+      .terminal-overlay.open {
+        transform: translateY(0);
+      }
+
+      .terminal-header {
+        background: #333;
+        padding: 6px 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .terminal-title {
+        color: #aaa;
+        font-size: 12px;
+        font-family: monospace;
+      }
+
+      .terminal-close {
+        background: none;
+        border: none;
+        color: #aaa;
+        cursor: pointer;
+        font-size: 16px;
+      }
+
+      .terminal-body {
+        padding: 8px 12px;
+        height: calc(100% - 32px);
+        overflow-y: auto;
+        font-family: 'SF Mono', Monaco, monospace;
+        font-size: 11px;
+        color: var(--terminal-text);
+      }
+
+      .terminal-line {
+        margin: 2px 0;
+      }
+      .terminal-line.error {
+        color: #ff6b6b;
+      }
+      .terminal-line.info {
+        color: #6bceff;
+      }
+      .terminal-line.warn {
+        color: #ffd93d;
+      }
+
+      /* Settings Modal */
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 2000;
+      }
+
+      .modal-overlay.open {
+        display: flex;
+      }
+
+      .modal {
+        background: var(--bg-card);
+        border-radius: 12px;
+        width: 400px;
+        max-height: 80vh;
+        overflow: hidden;
+      }
+
+      .modal-header {
+        padding: 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .modal-title {
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .modal-close {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        border: none;
+        background: var(--bg);
+        cursor: pointer;
+        font-size: 16px;
+      }
+
+      .modal-body {
+        padding: 16px;
+      }
+
+      .form-group {
+        margin-bottom: 16px;
+      }
+
+      .form-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 500;
+        margin-bottom: 6px;
+      }
+
+      .form-input,
+      .form-select {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 13px;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      .form-row {
+        display: flex;
+        gap: 12px;
+      }
+
+      .form-row .form-group {
+        flex: 1;
+      }
+
+      .toggle-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+      }
+
+      .toggle {
+        width: 44px;
+        height: 24px;
+        border-radius: 12px;
+        background: var(--border);
+        position: relative;
+        cursor: pointer;
+      }
+
+      .toggle.on {
+        background: var(--team-0);
+      }
+
+      .toggle::after {
+        content: '';
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: white;
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        transition: left 0.2s;
+      }
+
+      .toggle.on::after {
+        left: 22px;
+      }
+
+      /* Replays Section */
+      .replay-list {
+        max-height: 100px;
+        overflow-y: auto;
+      }
+
+      .replay-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 11px;
+      }
+
+      .replay-item:hover {
+        background: var(--bg);
+      }
+      .replay-item.active {
+        background: var(--team-0-bg);
+      }
+      .replay-time {
+        color: var(--text-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        <span class="logo">Civilization Clash</span>
+        <div class="connection-status">
+          <span class="status-dot connected"></span>
+          <span>Connected</span>
+        </div>
+      </div>
+      <div class="header-center">
+        <div class="turn-info">Turn <strong>12</strong> / 200</div>
+        <div class="timer">01:45</div>
+      </div>
+      <div class="header-right">
+        <button
+          class="hdr-btn"
+          onclick="document.getElementById('terminal').classList.toggle('open')"
+        >
+          Terminal
+        </button>
+        <button
+          class="hdr-btn"
+          onclick="document.getElementById('settings-modal').classList.add('open')"
+        >
+          Settings
+        </button>
+        <button class="hdr-btn" onclick="toggleTheme()">Theme</button>
+      </div>
+    </div>
+
+    <!-- Board Area -->
+    <div class="board-area">
+      <div class="grid" id="grid"></div>
+      <button
+        class="panel-toggle"
+        onclick="document.querySelector('.control-panel').classList.toggle('collapsed')"
+      >
+        ▼ Panel
+      </button>
+    </div>
+
+    <!-- Control Panel -->
+    <div class="control-panel">
+      <!-- Your Stats -->
+      <div class="panel-section">
+        <div class="section-title">Your Team</div>
+        <div class="player-header">
+          <span class="player-name team-0">Blue Empire</span>
+          <div class="player-status"><span class="status-dot connected"></span> Bot Connected</div>
+        </div>
+        <div class="stats-row">
+          <div class="stat-item">
+            <div class="stat-val">145</div>
+            <div class="stat-lbl">Gold</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-val">+12</div>
+            <div class="stat-lbl">Income</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-val">320</div>
+            <div class="stat-lbl">Score</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-val">4</div>
+            <div class="stat-lbl">Units</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="panel-section">
+        <div class="section-title">Actions</div>
+        <div class="action-grid">
+          <button class="action-btn">Soldier<span class="action-cost">20g</span></button>
+          <button class="action-btn">Archer<span class="action-cost">30g</span></button>
+          <button class="action-btn">Raider<span class="action-cost">25g</span></button>
+          <button class="action-btn">Expand<span class="action-cost">15g</span></button>
+          <button class="action-btn primary">Submit Turn</button>
+        </div>
+      </div>
+
+      <!-- Opponent Stats -->
+      <div class="panel-section opponent-stats">
+        <div class="section-title">Opponent</div>
+        <div class="player-header">
+          <span class="player-name team-1">Orange Dynasty</span>
+          <div class="player-status"><span class="status-dot connected"></span> Bot Connected</div>
+        </div>
+        <div class="stats-row">
+          <div class="stat-item">
+            <div class="stat-val">132</div>
+            <div class="stat-lbl">Gold</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-val">+10</div>
+            <div class="stat-lbl">Income</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-val">295</div>
+            <div class="stat-lbl">Score</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-val">3</div>
+            <div class="stat-lbl">Units</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Turn Log -->
+      <div class="panel-section">
+        <div class="section-title">Turn Log</div>
+        <div class="log-container">
+          <div class="log-line">
+            <span class="log-turn">T11</span> Orange Soldier hit Blue Soldier (1 dmg)
+          </div>
+          <div class="log-line"><span class="log-turn">T11</span> Blue captured (3, 2)</div>
+          <div class="log-line"><span class="log-turn">T10</span> Blue built Archer at City</div>
+          <div class="log-line"><span class="log-turn">T10</span> Orange expanded to (9, 5)</div>
+          <div class="log-line"><span class="log-turn">T9</span> Monument: Blue (+5 score)</div>
+        </div>
+      </div>
+
+      <!-- Replays -->
+      <div class="panel-section">
+        <div class="section-title">Spectated Games</div>
+        <div class="replay-list">
+          <div class="replay-item active">
+            <span>Current Game</span><span class="replay-time">Live</span>
+          </div>
+          <div class="replay-item">
+            <span>Game #42</span><span class="replay-time">5m ago</span>
+          </div>
+          <div class="replay-item">
+            <span>Game #41</span><span class="replay-time">12m ago</span>
+          </div>
+          <div class="replay-item">
+            <span>Game #40</span><span class="replay-time">18m ago</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Terminal Overlay -->
+    <div class="terminal-overlay" id="terminal">
+      <div class="terminal-header">
+        <span class="terminal-title">Server Messages</span>
+        <button
+          class="terminal-close"
+          onclick="document.getElementById('terminal').classList.remove('open')"
+        >
+          ×
+        </button>
+      </div>
+      <div class="terminal-body">
+        <div class="terminal-line info">[14:32:15] Connected to ws://localhost:8080</div>
+        <div class="terminal-line">[14:32:15] AUTH_SUCCESS: Authenticated as spectator</div>
+        <div class="terminal-line">[14:32:16] GAME_STATE: Received initial state</div>
+        <div class="terminal-line">[14:32:18] TURN_START: Turn 12, timeout 2000ms</div>
+        <div class="terminal-line">[14:32:19] ACTIONS_RECEIVED: Team 0 submitted 3 actions</div>
+        <div class="terminal-line">[14:32:20] ACTIONS_RECEIVED: Team 1 submitted 2 actions</div>
+        <div class="terminal-line">[14:32:20] TURN_RESULT: Processing complete</div>
+        <div class="terminal-line warn">[14:32:45] Connection latency: 145ms</div>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <span class="modal-title">Game Settings</span>
+          <button
+            class="modal-close"
+            onclick="document.getElementById('settings-modal').classList.remove('open')"
+          >
+            ×
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Server Status</label>
+            <div style="display: flex; align-items: center; gap: 8px">
+              <span class="status-dot connected"></span>
+              <span style="font-size: 13px">Connected to ws://localhost:8080</span>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Map Type</label>
+              <select class="form-select">
+                <option>Standard</option>
+                <option>Blitz</option>
+                <option>Marathon</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Map Size</label>
+              <select class="form-select">
+                <option>Small (10x8)</option>
+                <option selected>Medium (14x10)</option>
+                <option>Large (18x12)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Turn Timeout (ms)</label>
+            <input type="number" class="form-input" value="2000" />
+          </div>
+
+          <div class="toggle-row">
+            <span class="form-label" style="margin: 0">Manual Play Mode</span>
+            <div class="toggle" onclick="this.classList.toggle('on')"></div>
+          </div>
+
+          <div class="toggle-row">
+            <span class="form-label" style="margin: 0">Client Override Enabled</span>
+            <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+          </div>
+
+          <div class="toggle-row">
+            <span class="form-label" style="margin: 0">Dark Theme</span>
+            <div class="toggle" id="theme-toggle" onclick="toggleThemeFromModal()"></div>
+          </div>
+
+          <div class="form-group" style="margin-top: 16px">
+            <button class="action-btn primary" style="width: 100%">Apply Settings</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+        document.getElementById('theme-toggle').classList.toggle('on', !isDark);
+      }
+
+      function toggleThemeFromModal() {
+        document.getElementById('theme-toggle').classList.toggle('on');
+        toggleTheme();
+      }
+
+      // Generate grid
+      const grid = document.getElementById('grid');
+      for (let y = 0; y < 8; y++) {
+        for (let x = 0; x < 14; x++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+
+          if ((x < 2 && y < 2) || (x < 2 && y > 5)) {
+            cell.classList.add('owned-0');
+            if (x === 0 && (y === 0 || y === 7)) cell.innerHTML = '🏛️';
+          } else if ((x > 11 && y < 2) || (x > 11 && y > 5)) {
+            cell.classList.add('owned-1');
+            if (x === 13 && (y === 0 || y === 7)) cell.innerHTML = '🏛️';
+          } else if (x === 6 && y === 3) {
+            cell.classList.add('monument');
+            cell.innerHTML = '🏆';
+          } else if (Math.random() > 0.85)
+            cell.classList.add(['forest', 'mountain', 'water'][Math.floor(Math.random() * 3)]);
+
+          if (x === 1 && y === 1) cell.innerHTML = '<span class="cell-unit team-0">S</span>';
+          if (x === 2 && y === 2) cell.innerHTML = '<span class="cell-unit team-0">A</span>';
+          if (x === 1 && y === 6) cell.innerHTML = '<span class="cell-unit team-0">R</span>';
+          if (x === 12 && y === 1) cell.innerHTML = '<span class="cell-unit team-1">S</span>';
+          if (x === 11 && y === 3) cell.innerHTML = '<span class="cell-unit team-1">A</span>';
+          if (x === 12 && y === 6) cell.innerHTML = '<span class="cell-unit team-1">R</span>';
+
+          grid.appendChild(cell);
+        }
+      }
+    </script>
+  </body>
+</html>
