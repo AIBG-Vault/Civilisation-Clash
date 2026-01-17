@@ -437,7 +437,8 @@ function checkGameEnd(state) {
     const playerCities = state.cities.filter((c) => c.owner === player.id);
     if (playerCities.length === 0) {
       state.gameOver = true;
-      state.winner = player.id === 0 ? 1 : 0; // Other player wins
+      state.winner = player.id === 0 ? 1 : 0;
+      state.winReason = 'elimination';
       return;
     }
   }
@@ -446,16 +447,18 @@ function checkGameEnd(state) {
   if (state.turn >= state.maxTurns) {
     state.gameOver = true;
 
-    // Compare scores
     const score0 = state.players[0].score;
     const score1 = state.players[1].score;
 
     if (score0 > score1) {
       state.winner = 0;
+      state.winReason = 'score';
     } else if (score1 > score0) {
       state.winner = 1;
+      state.winReason = 'score';
     } else {
-      state.winner = null; // Tie
+      state.winner = null;
+      state.winReason = 'tie';
     }
   }
 }
