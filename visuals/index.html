@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Civilization Clash</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="css/styles.css" />
+    <script>
+      tailwind.config = {
+        darkMode: ['class', '[data-theme="dark"]'],
+        theme: {
+          extend: {
+            colors: {
+              team0: '#0071e3',
+              team0Light: '#4da3ff',
+              team1: '#ff6b35',
+              team1Light: '#ff9a76',
+              grass: '#90b060',
+              forest: '#4a7c3f',
+              mountain: '#8b8b8b',
+              water: '#5b9bd5',
+              monument: '#ffd700',
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body class="bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 overflow-hidden">
+    <!-- Main Container -->
+    <div id="app" class="relative w-screen h-screen">
+      <!-- Canvas Container -->
+      <div id="canvas-container" class="absolute inset-0">
+        <canvas id="game-canvas"></canvas>
+      </div>
+
+      <!-- Player 0 Stats Panel (Top Left) -->
+      <div id="panel-player0" class="panel absolute top-4 left-4 w-64" data-minimized="false">
+        <div
+          class="panel-header flex items-center justify-between px-3 py-2 cursor-pointer"
+          onclick="togglePanel('panel-player0')"
+        >
+          <div class="flex items-center gap-2">
+            <span class="connection-dot connected"></span>
+            <span class="font-semibold text-team0">Blue Empire</span>
+          </div>
+          <button class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded">
+            <i data-lucide="minus" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div class="panel-content px-3 pb-3">
+          <div class="grid grid-cols-3 gap-2 text-sm">
+            <div class="stat-item" title="Gold">
+              <i data-lucide="coins" class="w-4 h-4 text-yellow-500"></i>
+              <span id="p0-gold">145</span>
+            </div>
+            <div class="stat-item" title="Income">
+              <i data-lucide="trending-up" class="w-4 h-4 text-green-500"></i>
+              <span id="p0-income">+12</span>
+            </div>
+            <div class="stat-item" title="Score">
+              <i data-lucide="star" class="w-4 h-4 text-amber-500"></i>
+              <span id="p0-score">320</span>
+            </div>
+            <div class="stat-item" title="Cities">
+              <i data-lucide="building-2" class="w-4 h-4 text-slate-500"></i>
+              <span id="p0-cities">2</span>
+            </div>
+            <div class="stat-item" title="Units">
+              <i data-lucide="swords" class="w-4 h-4 text-red-500"></i>
+              <span id="p0-units">4</span>
+            </div>
+            <div class="stat-item" title="Tiles">
+              <i data-lucide="map-pin" class="w-4 h-4 text-blue-500"></i>
+              <span id="p0-tiles">8</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Turn Info Panel (Top Center) -->
+      <div id="panel-turn" class="panel absolute top-4 left-1/2 -translate-x-1/2">
+        <div class="flex items-center gap-4 px-4 py-2">
+          <div class="flex items-center gap-2">
+            <span id="connection-status" class="connection-dot connected"></span>
+            <span class="text-xs text-slate-500 dark:text-slate-400">Live</span>
+          </div>
+          <div class="h-4 w-px bg-slate-300 dark:bg-slate-600"></div>
+          <div class="flex items-center gap-1">
+            <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+            <span>Turn <span id="turn-current">12</span>/<span id="turn-max">200</span></span>
+          </div>
+          <div class="h-4 w-px bg-slate-300 dark:bg-slate-600"></div>
+          <div class="flex items-center gap-1 font-mono">
+            <i data-lucide="clock" class="w-4 h-4"></i>
+            <span id="timer">01:45</span>
+          </div>
+          <div class="h-4 w-px bg-slate-300 dark:bg-slate-600"></div>
+          <div class="flex items-center gap-1">
+            <i data-lucide="trophy" class="w-4 h-4 text-monument"></i>
+            <span id="monument-owner" class="text-team0 font-semibold">Blue</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Player 1 Stats Panel (Top Right) -->
+      <div id="panel-player1" class="panel absolute top-4 right-4 w-64" data-minimized="false">
+        <div
+          class="panel-header flex items-center justify-between px-3 py-2 cursor-pointer"
+          onclick="togglePanel('panel-player1')"
+        >
+          <div class="flex items-center gap-2">
+            <span class="connection-dot connected"></span>
+            <span class="font-semibold text-team1">Orange Dynasty</span>
+          </div>
+          <button class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded">
+            <i data-lucide="minus" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div class="panel-content px-3 pb-3">
+          <div class="grid grid-cols-3 gap-2 text-sm">
+            <div class="stat-item" title="Gold">
+              <i data-lucide="coins" class="w-4 h-4 text-yellow-500"></i>
+              <span id="p1-gold">98</span>
+            </div>
+            <div class="stat-item" title="Income">
+              <i data-lucide="trending-up" class="w-4 h-4 text-green-500"></i>
+              <span id="p1-income">+8</span>
+            </div>
+            <div class="stat-item" title="Score">
+              <i data-lucide="star" class="w-4 h-4 text-amber-500"></i>
+              <span id="p1-score">280</span>
+            </div>
+            <div class="stat-item" title="Cities">
+              <i data-lucide="building-2" class="w-4 h-4 text-slate-500"></i>
+              <span id="p1-cities">1</span>
+            </div>
+            <div class="stat-item" title="Units">
+              <i data-lucide="swords" class="w-4 h-4 text-red-500"></i>
+              <span id="p1-units">3</span>
+            </div>
+            <div class="stat-item" title="Tiles">
+              <i data-lucide="map-pin" class="w-4 h-4 text-blue-500"></i>
+              <span id="p1-tiles">6</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls Panel (Bottom Left) -->
+      <div id="panel-controls" class="panel absolute bottom-4 left-4">
+        <div class="flex items-center gap-1 p-2">
+          <button id="btn-terminal" class="control-btn" title="Terminal" onclick="toggleTerminal()">
+            <i data-lucide="terminal" class="w-5 h-5"></i>
+          </button>
+          <button
+            id="btn-replays"
+            class="control-btn"
+            title="Game Replays"
+            onclick="toggleModal('modal-replays')"
+          >
+            <i data-lucide="film" class="w-5 h-5"></i>
+          </button>
+          <button
+            id="btn-settings"
+            class="control-btn"
+            title="Settings"
+            onclick="toggleModal('modal-settings')"
+          >
+            <i data-lucide="settings" class="w-5 h-5"></i>
+          </button>
+          <button id="btn-theme" class="control-btn" title="Toggle Theme" onclick="toggleTheme()">
+            <i data-lucide="sun" class="w-5 h-5 dark:hidden"></i>
+            <i data-lucide="moon" class="w-5 h-5 hidden dark:block"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Replay Bar (Bottom Center) -->
+      <div id="panel-replay" class="panel absolute bottom-4 left-1/2 -translate-x-1/2">
+        <div class="flex items-center gap-3 px-4 py-2">
+          <!-- Game status indicator -->
+          <div class="flex items-center gap-2">
+            <span
+              id="game-status-dot"
+              class="w-2 h-2 rounded-full bg-green-500 animate-pulse"
+            ></span>
+            <span id="game-status-text" class="text-xs text-slate-500 dark:text-slate-400"
+              >Live</span
+            >
+          </div>
+          <div class="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
+
+          <!-- Playback controls -->
+          <button
+            id="btn-replay-start"
+            class="control-btn w-8 h-8"
+            title="Go to start"
+            onclick="Replay.goToStart()"
+          >
+            <i data-lucide="skip-back" class="w-4 h-4"></i>
+          </button>
+          <button
+            id="btn-replay-prev"
+            class="control-btn w-8 h-8"
+            title="Previous turn"
+            onclick="Replay.prevTurn()"
+          >
+            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+          </button>
+          <button
+            id="btn-replay-play"
+            class="control-btn w-8 h-8"
+            title="Play/Pause"
+            onclick="Replay.togglePlay()"
+          >
+            <i data-lucide="play" class="w-4 h-4" id="replay-play-icon"></i>
+          </button>
+          <button
+            id="btn-replay-next"
+            class="control-btn w-8 h-8"
+            title="Next turn"
+            onclick="Replay.nextTurn()"
+          >
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+          </button>
+          <button
+            id="btn-replay-end"
+            class="control-btn w-8 h-8"
+            title="Go to latest"
+            onclick="Replay.goToEnd()"
+          >
+            <i data-lucide="skip-forward" class="w-4 h-4"></i>
+          </button>
+
+          <div class="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
+
+          <!-- Turn slider -->
+          <div class="flex items-center gap-2 min-w-[200px]">
+            <span id="replay-turn-current" class="text-xs font-mono w-8 text-right">0</span>
+            <input
+              type="range"
+              id="replay-slider"
+              class="replay-slider flex-1"
+              min="0"
+              max="200"
+              value="0"
+              oninput="Replay.seekTo(this.value)"
+            />
+            <span id="replay-turn-max" class="text-xs font-mono w-8">200</span>
+          </div>
+
+          <div class="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
+
+          <!-- Speed control -->
+          <div class="flex items-center gap-1">
+            <i data-lucide="gauge" class="w-4 h-4 text-slate-400"></i>
+            <select
+              id="replay-speed"
+              class="input-field text-xs py-1 px-2"
+              onchange="Replay.setSpeed(this.value)"
+            >
+              <option value="0.5">0.5x</option>
+              <option value="1" selected>1x</option>
+              <option value="2">2x</option>
+              <option value="4">4x</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Manual Play Panel (Right Edge - Hidden) -->
+      <div id="panel-manual" class="slide-panel-right">
+        <div class="slide-panel-tab" onclick="toggleManualPanel()">
+          <i data-lucide="gamepad-2" class="w-5 h-5"></i>
+        </div>
+        <div class="slide-panel-content">
+          <div class="panel-header flex items-center justify-between px-3 py-2">
+            <span class="font-semibold">Manual Play</span>
+            <button
+              class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded"
+              onclick="toggleManualPanel()"
+            >
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+
+          <!-- Connection Section (shown when not connected as player) -->
+          <div id="manual-connect" class="px-3 pb-3 space-y-3">
+            <div class="text-sm text-slate-500 dark:text-slate-400">
+              Connect as a player to control a team manually.
+            </div>
+            <div>
+              <label class="block text-xs font-medium mb-1">Team</label>
+              <select id="manual-team" class="input-field w-full text-sm">
+                <option value="0">Blue (Team 0)</option>
+                <option value="1">Orange (Team 1)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium mb-1">Password</label>
+              <input
+                type="password"
+                id="manual-password"
+                class="input-field w-full text-sm"
+                placeholder="Enter team password"
+              />
+            </div>
+            <button
+              id="btn-manual-connect"
+              class="action-btn primary w-full justify-center"
+              onclick="App.connectAsPlayer()"
+            >
+              <i data-lucide="plug" class="w-4 h-4"></i>
+              <span>Connect as Player</span>
+            </button>
+          </div>
+
+          <!-- Action Section (shown when connected as player) -->
+          <div id="manual-actions" class="px-3 pb-3 space-y-3 hidden">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-slate-500 dark:text-slate-400">Playing as</span>
+              <span id="manual-team-name" class="font-semibold text-team0">Blue</span>
+            </div>
+
+            <div class="border-t border-slate-200 dark:border-slate-700 pt-3 space-y-2">
+              <button
+                id="btn-build"
+                class="action-btn w-full justify-start"
+                onclick="toggleModal('modal-build')"
+              >
+                <i data-lucide="hammer" class="w-4 h-4"></i>
+                <span>Build Unit</span>
+                <span class="ml-auto text-xs text-slate-400">B</span>
+              </button>
+              <button
+                id="btn-expand"
+                class="action-btn w-full justify-start"
+                onclick="App.startExpandMode()"
+              >
+                <i data-lucide="maximize-2" class="w-4 h-4"></i>
+                <span>Expand Territory</span>
+                <span class="ml-auto text-xs text-slate-400">E</span>
+              </button>
+              <button
+                id="btn-city"
+                class="action-btn w-full justify-start"
+                onclick="App.startCityMode()"
+              >
+                <i data-lucide="landmark" class="w-4 h-4"></i>
+                <span>Build City</span>
+                <span class="ml-auto text-xs text-slate-400">C</span>
+              </button>
+            </div>
+
+            <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium">Queued Actions</span>
+                <span class="text-xs text-slate-500 dark:text-slate-400"
+                  ><span id="queued-count">0</span> actions</span
+                >
+              </div>
+              <div id="action-queue" class="space-y-1 max-h-32 overflow-y-auto text-xs">
+                <div class="text-slate-400 italic">No actions queued</div>
+              </div>
+            </div>
+
+            <div class="flex gap-2">
+              <button class="action-btn flex-1 justify-center" onclick="App.clearActionQueue()">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                <span>Clear</span>
+              </button>
+              <button
+                id="btn-submit"
+                class="action-btn primary flex-1 justify-center"
+                onclick="App.submitActions()"
+              >
+                <i data-lucide="send" class="w-4 h-4"></i>
+                <span>Submit</span>
+              </button>
+            </div>
+
+            <button
+              class="action-btn w-full justify-center text-red-500 border-red-300"
+              onclick="App.disconnectPlayer()"
+            >
+              <i data-lucide="log-out" class="w-4 h-4"></i>
+              <span>Disconnect</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inspector Panel (Right Slide-in) -->
+      <div id="panel-inspector" class="panel absolute top-1/2 -translate-y-1/2 right-4 w-72 hidden">
+        <div class="panel-header flex items-center justify-between px-3 py-2">
+          <span class="font-semibold">Tile Details</span>
+          <button
+            class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded"
+            onclick="closeInspector()"
+          >
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div class="panel-content px-3 pb-3 space-y-3">
+          <div class="space-y-1 text-sm">
+            <div class="flex justify-between">
+              <span class="text-slate-500 dark:text-slate-400">Position</span>
+              <span id="inspect-pos">(5, 3)</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500 dark:text-slate-400">Terrain</span>
+              <span id="inspect-terrain">Grass</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500 dark:text-slate-400">Owner</span>
+              <span id="inspect-owner" class="text-team0">Blue</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500 dark:text-slate-400">Income</span>
+              <span id="inspect-income">+1/turn</span>
+            </div>
+          </div>
+
+          <div id="inspect-unit" class="border-t border-slate-200 dark:border-slate-700 pt-3">
+            <div class="text-xs uppercase text-slate-500 dark:text-slate-400 mb-2">Unit</div>
+            <div class="space-y-1 text-sm">
+              <div class="flex justify-between">
+                <span class="text-slate-500 dark:text-slate-400">Type</span>
+                <span id="inspect-unit-type">Soldier</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-slate-500 dark:text-slate-400">HP</span>
+                <div class="flex items-center gap-2">
+                  <div class="hp-bar w-16">
+                    <div id="inspect-unit-hp-bar" class="hp-fill" style="width: 66%"></div>
+                  </div>
+                  <span id="inspect-unit-hp">2/3</span>
+                </div>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500 dark:text-slate-400">Can Move</span>
+                <span id="inspect-unit-move">Yes</span>
+              </div>
+            </div>
+            <div class="flex gap-2 mt-3">
+              <button class="action-btn flex-1 text-xs">
+                <i data-lucide="move" class="w-3 h-3"></i>
+                <span>Move</span>
+              </button>
+              <button class="action-btn flex-1 text-xs">
+                <i data-lucide="eye" class="w-3 h-3"></i>
+                <span>Range</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Terminal Overlay -->
+      <div id="terminal" class="panel absolute bottom-20 left-4 right-4 max-h-64 hidden">
+        <div class="panel-header flex items-center justify-between px-3 py-2">
+          <div class="flex items-center gap-2">
+            <i data-lucide="terminal" class="w-4 h-4"></i>
+            <span class="font-semibold">Server Messages</span>
+          </div>
+          <button
+            class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded"
+            onclick="toggleTerminal()"
+          >
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div id="terminal-content" class="font-mono text-xs p-3 max-h-48 overflow-y-auto space-y-1">
+          <div class="text-slate-500">[14:32:15] Connected to ws://localhost:8080</div>
+          <div class="text-green-500">[14:32:16] AUTH_SUCCESS: spectator</div>
+          <div class="text-slate-400">[14:32:18] TURN_START: Turn 12, timeout 2000ms</div>
+          <div class="text-blue-500">[14:32:19] ACTIONS_RECEIVED: Team 0 - 3 actions</div>
+        </div>
+      </div>
+
+      <!-- Settings Modal -->
+      <div id="modal-settings" class="modal-overlay hidden">
+        <div class="modal">
+          <div class="modal-header">
+            <span class="font-semibold">Settings</span>
+            <button
+              class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded"
+              onclick="toggleModal('modal-settings')"
+            >
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <div class="modal-content space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="font-medium">Server Status</div>
+                <div class="text-sm text-slate-500 dark:text-slate-400">ws://localhost:8080</div>
+              </div>
+              <span class="connection-dot connected"></span>
+            </div>
+            <div class="border-t border-slate-200 dark:border-slate-700 pt-4">
+              <div class="space-y-3">
+                <div>
+                  <label class="block text-sm font-medium mb-1">Map Type</label>
+                  <select id="setting-map-type" class="input-field w-full">
+                    <option value="random">Random</option>
+                    <option value="balanced">Balanced</option>
+                    <option value="symmetric">Symmetric</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1">Map Size</label>
+                  <select id="setting-map-size" class="input-field w-full">
+                    <option value="small">Small (10x10)</option>
+                    <option value="medium">Medium (15x15)</option>
+                    <option value="large">Large (20x20)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1">Turn Timeout (ms)</label>
+                  <input
+                    type="number"
+                    id="setting-timeout"
+                    class="input-field w-full"
+                    value="2000"
+                  />
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium">Manual Play</span>
+                  <label class="toggle">
+                    <input type="checkbox" id="setting-manual" />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium">Client Override</span>
+                  <label class="toggle">
+                    <input type="checkbox" id="setting-override" />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Replays Modal -->
+      <div id="modal-replays" class="modal-overlay hidden">
+        <div class="modal">
+          <div class="modal-header">
+            <span class="font-semibold">Game Replays</span>
+            <button
+              class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded"
+              onclick="toggleModal('modal-replays')"
+            >
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <div class="modal-content">
+            <div class="space-y-2">
+              <div class="replay-item active">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="play-circle" class="w-4 h-4"></i>
+                  <span>Current Game</span>
+                </div>
+                <span class="text-xs text-slate-500 dark:text-slate-400">Turn 12</span>
+              </div>
+              <div class="replay-item">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="file-video" class="w-4 h-4"></i>
+                  <span>Game #1234</span>
+                </div>
+                <span class="text-xs text-slate-500 dark:text-slate-400">Blue won</span>
+              </div>
+              <div class="replay-item">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="file-video" class="w-4 h-4"></i>
+                  <span>Game #1233</span>
+                </div>
+                <span class="text-xs text-slate-500 dark:text-slate-400">Orange won</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Build Modal -->
+      <div id="modal-build" class="modal-overlay hidden">
+        <div class="modal">
+          <div class="modal-header">
+            <span class="font-semibold">Build Unit</span>
+            <button
+              class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded"
+              onclick="toggleModal('modal-build')"
+            >
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <div class="modal-content">
+            <div class="grid grid-cols-3 gap-3 mb-4">
+              <button class="unit-card" data-unit="soldier">
+                <div class="unit-icon bg-team0/20 text-team0">S</div>
+                <div class="font-medium">Soldier</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">50 gold</div>
+              </button>
+              <button class="unit-card" data-unit="archer">
+                <div class="unit-icon bg-team0/20 text-team0">A</div>
+                <div class="font-medium">Archer</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">75 gold</div>
+              </button>
+              <button class="unit-card" data-unit="raider">
+                <div class="unit-icon bg-team0/20 text-team0">R</div>
+                <div class="font-medium">Raider</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">100 gold</div>
+              </button>
+            </div>
+            <div class="mb-4">
+              <label class="block text-sm font-medium mb-1">Build at City</label>
+              <select id="build-city" class="input-field w-full">
+                <option value="0">Capital (3, 2)</option>
+                <option value="1">Outpost (7, 5)</option>
+              </select>
+            </div>
+            <button class="action-btn primary w-full justify-center">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+              <span>Confirm Build</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/canvas/isometric.js"></script>
+    <script src="js/canvas/tiles.js"></script>
+    <script src="js/canvas/units.js"></script>
+    <script src="js/canvas/renderer.js"></script>
+    <script src="js/ui/panels.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>
