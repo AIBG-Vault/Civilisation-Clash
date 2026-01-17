@@ -62,6 +62,7 @@ class GameServer {
   initializeGame() {
     console.log('Initializing game V2 with terrain and economy');
     this.game = new GameV2('blitz'); // 15x10 map, 50 turns
+    //this.game = new GameV2('normal'); // 15x10 map, 50 turns
     this.game.initialize();
 
     console.log(`Map generated: ${this.game.mapWidth}x${this.game.mapHeight}`);
@@ -103,11 +104,15 @@ class GameServer {
 
     // Check password and assign team
     let assignedTeamId = -1;
+    let isSpectator = false;
 
     if (password === passwords.teams.team0) {
       assignedTeamId = 0;
     } else if (password === passwords.teams.team1) {
       assignedTeamId = 1;
+    } else if (password === passwords.spectator) {
+      assignedTeamId = -1;
+      isSpectator = true;
     } else {
       ws.send(JSON.stringify({ type: 'ERROR', message: 'Invalid password' }));
       ws.close();
@@ -120,6 +125,7 @@ class GameServer {
       teamId: assignedTeamId,
       name: name,
       isAlive: true,
+      isSpectator: isSpectator,
     };
 
     this.connections.set(connectionId, connection);
@@ -129,10 +135,15 @@ class GameServer {
       JSON.stringify({
         type: 'AUTH_SUCCESS',
         teamId: assignedTeamId,
+        isSpectator: isSpectator,
       })
     );
 
-    console.log(`Player '${name}' connected as Team ${assignedTeamId}`);
+    if (isSpectator) {
+      console.log(`Spectator '${name}' connected`);
+    } else {
+      console.log(`Player '${name}' connected as Team ${assignedTeamId}`);
+    }
 
     // Send current game state
     if (this.game) {
@@ -190,6 +201,14 @@ class GameServer {
 
     switch (message.type) {
       case 'SUBMIT_ACTIONS':
+        // Spectators cannot submit actions
+        if (connection.isSpectator) {
+          connection.ws.send(JSON.stringify({
+            type: 'ERROR',
+            message: 'Spectators cannot submit actions'
+          }));
+          return;
+        }
         this.handleActions(connection.teamId, message.actions);
         break;
 
@@ -263,28 +282,32 @@ class GameServer {
       this.turnTimer = null;
     }
 
-    // Get active player count
+    // Get active player count (exclude spectators who have teamId -1)
     const activePlayers = Array.from(this.connections.values()).filter(
-      c => c.teamId >= 0
+      c => c.teamId >= 0 && !c.isSpectator
     );
 
     // Get unique teams that have players
     const activeTeams = new Set(activePlayers.map(p => p.teamId));
 
-    // Process turn IMMEDIATELY if all active teams have submitted
-    // This means bot games can run as fast as the bots can submit actions
-    if (this.pendingActions.size === activeTeams.size && activeTeams.size > 0) {
+    // Process turn IMMEDIATELY if both teams have submitted
+    // Require both team 0 and team 1 to be connected before processing
+    const bothTeamsConnected = activeTeams.has(0) && activeTeams.has(1);
+    if (bothTeamsConnected && this.pendingActions.size === 2) {
       // Process synchronously for maximum speed
       this.processTurn();
-    } else if (this.timeoutEnabled) {
-      // Set timeout for missing player (only if enabled)
+    } else if (bothTeamsConnected && this.timeoutEnabled) {
+      // Set timeout for missing player (only if both teams connected and timeout enabled)
       this.turnTimer = setTimeout(() => {
         console.log('Turn timeout reached');
         this.processTurn();
       }, this.turnTimeout);
+    } else if (!bothTeamsConnected) {
+      // Wait for both teams to connect
+      console.log(`Waiting for both teams to connect (Team 0: ${activeTeams.has(0) ? 'connected' : 'waiting'}, Team 1: ${activeTeams.has(1) ? 'connected' : 'waiting'})`);
     } else {
       // No timeout - wait for other players
-      console.log(`Waiting for other players (${this.pendingActions.size}/${activeTeams.size} teams submitted)`);
+      console.log(`Waiting for other players (${this.pendingActions.size}/2 teams submitted)`);
     }
   }
 

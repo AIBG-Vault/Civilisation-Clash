@@ -500,6 +500,21 @@
             Playback: Queue states | Real-time: Live view
           </div>
         </div>
+
+        <!-- Server Controls -->
+        <div class="sidebar-section" id="serverControlsSection">
+          <div class="section-title">Server Controls</div>
+          <div style="font-size: 11px; color: var(--text-tertiary); margin-bottom: 8px">
+            Requires server --enable-client-override
+          </div>
+          <div class="btn-group">
+            <button id="disableTimeoutBtn" class="btn btn-sm">No Timeout</button>
+            <button id="botTimeoutBtn" class="btn btn-sm">Bot (250ms)</button>
+          </div>
+          <button id="resetGameBtn" class="btn btn-sm btn-danger" style="width: 100%">
+            Reset Game
+          </button>
+        </div>
       </aside>
 
       <!-- Main Content -->

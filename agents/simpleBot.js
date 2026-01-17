@@ -12,6 +12,52 @@
  *
  * Usage: node simpleBot.js [teamPassword] [botName]
  */
+
+// Helper function: get adjacent tile positions
+function getAdjacentPositions(x, y, mapWidth, mapHeight) {
+  const positions = [];
+  const dirs = [
+    [0, 1],
+    [0, -1],
+    [1, 0],
+    [-1, 0],
+  ];
+
+  for (const [dx, dy] of dirs) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx >= 0 && nx < mapWidth && ny >= 0 && ny < mapHeight) {
+      positions.push({ x: nx, y: ny });
+    }
+  }
+
+  return positions;
+}
+
+// Helper function: get possible moves for a unit
+function getPossibleMoves(unit, map, units, mapWidth, mapHeight) {
+  if (!unit.canMove) return [];
+
+  const moves = [];
+  const adjacent = getAdjacentPositions(unit.x, unit.y, mapWidth, mapHeight);
+
+  for (const pos of adjacent) {
+    const tile = map.find((t) => t.x === pos.x && t.y === pos.y);
+    if (!tile) continue;
+
+    // Can't move to impassable terrain
+    if (tile.type === 'MOUNTAIN' || tile.type === 'WATER') continue;
+
+    // Can't move to occupied tile
+    const occupied = units.some((u) => u.x === pos.x && u.y === pos.y);
+    if (occupied) continue;
+
+    moves.push(pos);
+  }
+
+  return moves;
+}
+
 class SimpleBot {
   constructor(name = 'SimpleBot', password = 'password0') {
     this.name = name;
@@ -110,6 +156,12 @@ class SimpleBot {
     });
   }
 
+  getMapDimensions() {
+    const mapWidth = Math.max(...this.gameState.map.map((t) => t.x)) + 1;
+    const mapHeight = Math.max(...this.gameState.map.map((t) => t.y)) + 1;
+    return { mapWidth, mapHeight };
+  }
+
   executeTurn() {
     const actions = [];
     const myTeam = this.gameState.teams.find((t) => t.id === this.teamId);
@@ -118,14 +170,25 @@ class SimpleBot {
       (u) => u.owner !== this.teamId && u.owner !== null
     );
 
-    console.log(`${this.name}: Planning actions...`);
+    console.log(
+      `${this.name}: Planning actions... (TP: ${myTeam.territoryPoints}, Units: ${myUnits.length} vs ${enemyUnits.length})`
+    );
 
-    // 1. Build soldiers if we have enough TP and fewer than 5 units
-    if (myTeam.territoryPoints >= 20 && myUnits.length < 8) {
-      const buildAction = this.tryBuildUnit();
+    let remainingTP = myTeam.territoryPoints;
+
+    // 1. Build soldiers while we have enough TP and fewer units than enemy + 2
+    while (
+      remainingTP >= 20 &&
+      myUnits.length + actions.filter((a) => a.type === 'BUILD_UNIT').length <=
+        enemyUnits.length + 2
+    ) {
+      const buildAction = this.tryBuildUnit(actions);
       if (buildAction) {
         actions.push(buildAction);
+        remainingTP -= 20;
         console.log(`${this.name}: Building soldier at (${buildAction.x}, ${buildAction.y})`);
+      } else {
+        break; // No valid build location
       }
     }
 
@@ -142,12 +205,15 @@ class SimpleBot {
       }
     });
 
-    // 3. Expand territory if we have spare TP
-    if (myTeam.territoryPoints >= 10 && actions.length < 3) {
-      const expandAction = this.tryExpandTerritory();
+    // 3. Expand territory while we have spare TP and at least as many soldiers as opponent
+    while (remainingTP >= 5 && myUnits.length >= enemyUnits.length) {
+      const expandAction = this.tryExpandTerritory(actions);
       if (expandAction) {
         actions.push(expandAction);
+        remainingTP -= 5;
         console.log(`${this.name}: Expanding to tile (${expandAction.x}, ${expandAction.y})`);
+      } else {
+        break; // No valid expansion location
       }
     }
 
@@ -167,13 +233,23 @@ class SimpleBot {
     );
   }
 
-  tryBuildUnit() {
+  tryBuildUnit(pendingActions = []) {
+    const { mapWidth, mapHeight } = this.getMapDimensions();
+
+    // Get tiles already used by pending build actions
+    const pendingBuildTiles = pendingActions
+      .filter((a) => a.type === 'BUILD_UNIT')
+      .map((a) => `${a.x},${a.y}`);
+
     // Find valid build locations on our territory
     const validBuildTiles = this.gameState.map.filter((tile) => {
       if (tile.owner !== this.teamId) return false;
       if (tile.type !== 'FIELD') return false;
       const occupied = this.gameState.units.some((u) => u.x === tile.x && u.y === tile.y);
-      return !occupied;
+      if (occupied) return false;
+      // Exclude tiles with pending builds
+      if (pendingBuildTiles.includes(`${tile.x},${tile.y}`)) return false;
+      return true;
     });
 
     if (validBuildTiles.length === 0) return null;
@@ -183,9 +259,10 @@ class SimpleBot {
     let bestScore = -1;
 
     validBuildTiles.forEach((tile) => {
-      const adjacentEnemyTiles = this.getAdjacentTiles(tile.x, tile.y).filter(
-        (t) => t.owner !== this.teamId
-      );
+      const adjacentPositions = getAdjacentPositions(tile.x, tile.y, mapWidth, mapHeight);
+      const adjacentEnemyTiles = adjacentPositions
+        .map((pos) => this.gameState.map.find((t) => t.x === pos.x && t.y === pos.y))
+        .filter((t) => t && t.owner !== this.teamId);
       const score = adjacentEnemyTiles.length;
 
       if (score > bestScore) {
@@ -203,7 +280,15 @@ class SimpleBot {
   }
 
   findBestMove(unit, enemyUnits) {
-    const possibleMoves = this.getPossibleMoves(unit);
+    const { mapWidth, mapHeight } = this.getMapDimensions();
+
+    const possibleMoves = getPossibleMoves(
+      unit,
+      this.gameState.map,
+      this.gameState.units,
+      mapWidth,
+      mapHeight
+    );
     if (possibleMoves.length === 0) return null;
 
     let bestMove = null;
@@ -274,16 +359,47 @@ class SimpleBot {
     return score;
   }
 
-  tryExpandTerritory() {
-    // Find tiles adjacent to our territory that we can expand to
+  tryExpandTerritory(pendingActions = []) {
+    const { mapWidth, mapHeight } = this.getMapDimensions();
+
+    // Get tiles already being expanded this turn (for chaining)
+    const pendingExpansions = pendingActions
+      .filter((a) => a.type === 'EXPAND_TERRITORY')
+      .map((a) => ({ x: a.x, y: a.y }));
+
+    // Find tiles adjacent to our territory OR pending expansions that we can expand to
     const myTiles = this.gameState.map.filter((t) => t.owner === this.teamId);
     const expandableTiles = [];
 
+    // Check from owned territory
     myTiles.forEach((tile) => {
-      const adjacent = this.getAdjacentTiles(tile.x, tile.y);
-      adjacent.forEach((adjTile) => {
-        if (adjTile.owner === null && adjTile.type === 'FIELD') {
-          if (!expandableTiles.some((t) => t.x === adjTile.x && t.y === adjTile.y)) {
+      const adjacentPositions = getAdjacentPositions(tile.x, tile.y, mapWidth, mapHeight);
+      adjacentPositions.forEach((pos) => {
+        const adjTile = this.gameState.map.find((t) => t.x === pos.x && t.y === pos.y);
+        if (adjTile && adjTile.owner === null && adjTile.type === 'FIELD') {
+          // Not already in expandable list or pending
+          const alreadyListed = expandableTiles.some((t) => t.x === adjTile.x && t.y === adjTile.y);
+          const alreadyPending = pendingExpansions.some(
+            (t) => t.x === adjTile.x && t.y === adjTile.y
+          );
+          if (!alreadyListed && !alreadyPending) {
+            expandableTiles.push(adjTile);
+          }
+        }
+      });
+    });
+
+    // Check from pending expansions (chaining)
+    pendingExpansions.forEach((pending) => {
+      const adjacentPositions = getAdjacentPositions(pending.x, pending.y, mapWidth, mapHeight);
+      adjacentPositions.forEach((pos) => {
+        const adjTile = this.gameState.map.find((t) => t.x === pos.x && t.y === pos.y);
+        if (adjTile && adjTile.owner === null && adjTile.type === 'FIELD') {
+          const alreadyListed = expandableTiles.some((t) => t.x === adjTile.x && t.y === adjTile.y);
+          const alreadyPending = pendingExpansions.some(
+            (t) => t.x === adjTile.x && t.y === adjTile.y
+          );
+          if (!alreadyListed && !alreadyPending) {
             expandableTiles.push(adjTile);
           }
         }
@@ -296,56 +412,10 @@ class SimpleBot {
     const tile = expandableTiles[Math.floor(Math.random() * expandableTiles.length)];
 
     return {
-      type: 'EXPAND',
+      type: 'EXPAND_TERRITORY',
       x: tile.x,
       y: tile.y,
     };
-  }
-
-  getPossibleMoves(unit) {
-    const moves = [];
-    const directions = [
-      [0, 1], // North
-      [0, -1], // South
-      [1, 0], // East
-      [-1, 0], // West
-    ];
-
-    directions.forEach(([dx, dy]) => {
-      const newX = unit.x + dx;
-      const newY = unit.y + dy;
-
-      const tile = this.gameState.map.find((t) => t.x === newX && t.y === newY);
-      if (!tile) return;
-
-      // Check if tile is passable
-      if (tile.type !== 'FIELD') return;
-
-      // Check if tile is occupied by another unit
-      const occupied = this.gameState.units.some((u) => u.x === newX && u.y === newY);
-      if (occupied) return;
-
-      moves.push({ x: newX, y: newY });
-    });
-
-    return moves;
-  }
-
-  getAdjacentTiles(x, y) {
-    const tiles = [];
-    const directions = [
-      [0, 1],
-      [0, -1],
-      [1, 0],
-      [-1, 0],
-    ];
-
-    directions.forEach(([dx, dy]) => {
-      const tile = this.gameState.map.find((t) => t.x === x + dx && t.y === y + dy);
-      if (tile) tiles.push(tile);
-    });
-
-    return tiles;
   }
 }
 

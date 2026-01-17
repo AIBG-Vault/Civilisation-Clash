@@ -8,6 +8,7 @@ class GameClient {
     this.selectedUnit = null;
     this.pendingActions = [];
     this.isConnected = false;
+    this.isSpectator = false;
     this.botMode = false;
     this.expandMode = false;
     this.selectedTile = null;
@@ -23,7 +24,8 @@ class GameClient {
     this.playbackInterval = null; // Interval for playback
     this.lastRenderTime = 0; // For realtime throttling
     this.pendingGameOver = null; // Store game over message until playback catches up
-    this.pendingNewGame = null; // Store new game state until ready to show it
+    this.pendingNewGame = false; // Flag indicating a new game is waiting
+    this.nextGameStates = []; // Queue of states for the next game while current one finishes
 
     this.canvas = document.getElementById('gameCanvas');
     this.uiCanvas = document.getElementById('uiCanvas');
@@ -47,7 +49,28 @@ class GameClient {
     document.getElementById('playbackModeBtn').onclick = () => this.togglePlaybackMode();
     document.getElementById('fpsBtn').onclick = () => this.cycleFPS();
 
+    // Server control buttons
+    document.getElementById('disableTimeoutBtn').onclick = () =>
+      this.sendGameControl('DISABLE_TIMEOUT');
+    document.getElementById('botTimeoutBtn').onclick = () =>
+      this.sendGameControl('ENABLE_BOT_TIMEOUT');
+    document.getElementById('resetGameBtn').onclick = () => this.sendGameControl('RESET_GAME');
+
     this.renderer.onTileClick = (x, y) => this.handleTileClick(x, y);
+  }
+
+  sendGameControl(action) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      alert('Not connected to server');
+      return;
+    }
+    this.ws.send(
+      JSON.stringify({
+        type: 'GAME_CONTROL',
+        action: action,
+      })
+    );
+    console.log(`Sent game control: ${action}`);
   }
 
   disconnect() {
@@ -62,7 +85,7 @@ class GameClient {
 
     // Prompt for password
     const password = prompt(
-      'Enter password:\n- "password0" for Blue Team\n- "password1" for Red Team\n- "spectator" for spectator mode\n- "admin123" for admin'
+      'Enter password:\n- "password0" for Blue Team\n- "password1" for Red Team\n- "spectator" for spectator mode'
     );
     if (!password) {
       console.log('Connection cancelled');
@@ -111,34 +134,54 @@ class GameClient {
       case 'AUTH_SUCCESS':
         this.myTeamId = message.teamId;
         this.isConnected = true;
+        this.isSpectator = message.isSpectator || this.myTeamId < 0;
 
-        console.log(`Authenticated as Team ${this.myTeamId}`);
+        console.log(
+          `Authenticated as Team ${this.myTeamId}${this.isSpectator ? ' (Spectator)' : ''}`
+        );
         document.getElementById('connectBtn').textContent = 'Disconnect';
         document.getElementById('connectBtn').disabled = false;
 
-        document.getElementById('status').textContent = `Connected - Playing as ${
-          this.myTeamId === 0 ? 'Blue Team' : 'Red Team'
-        }`;
-        document.getElementById('endTurnBtn').disabled = false;
-        document.getElementById('buildUnitBtn').disabled = false;
-        document.getElementById('expandBtn').disabled = false;
+        if (this.isSpectator) {
+          document.getElementById('status').textContent = 'Connected - Spectating';
+          document.getElementById('endTurnBtn').disabled = true;
+          document.getElementById('buildUnitBtn').disabled = true;
+          document.getElementById('expandBtn').disabled = true;
+        } else {
+          document.getElementById('status').textContent = `Connected - Playing as ${
+            this.myTeamId === 0 ? 'Blue Team' : 'Red Team'
+          }`;
+          document.getElementById('endTurnBtn').disabled = false;
+          document.getElementById('buildUnitBtn').disabled = false;
+          document.getElementById('expandBtn').disabled = false;
+        }
         break;
 
       case 'GAME_STATE':
         // Check if this is a new game starting (turn reset to 0)
         const isNewGame = this.gameState && this.gameState.turn > 0 && message.state.turn === 0;
 
-        // Handle new game during playback
+        // Handle new game during playback - queue states separately
         if (
           isNewGame &&
           this.playbackMode === 'queue' &&
           (this.isPlayingBack || this.stateQueue.length > 0)
         ) {
-          // Store the new game state for later
-          this.pendingNewGame = message.state;
+          // Start collecting new game states in a separate queue
+          this.pendingNewGame = true;
+          this.nextGameStates = [message.state];
           console.log('New game detected, will show after current playback completes');
 
           // Don't process this state yet
+          return;
+        }
+
+        // If we're collecting states for the next game, add to that queue instead
+        if (this.pendingNewGame && this.playbackMode === 'queue') {
+          this.nextGameStates.push(message.state);
+          console.log(
+            `Queued state for next game (turn ${message.state.turn}, ${this.nextGameStates.length} states buffered)`
+          );
           return;
         }
 
@@ -459,7 +502,7 @@ class GameClient {
       }
     } else {
       // Queue mode for controlled playback
-      if (this.gameState && !this.pendingNewGame) {
+      if (this.gameState) {
         this.stateQueue.push(JSON.parse(JSON.stringify(this.gameState)));
       }
 
@@ -481,40 +524,55 @@ class GameClient {
         this.pendingGameOver = null;
 
         // After showing game over, check if there's a new game waiting
-        if (this.pendingNewGame) {
+        if (this.pendingNewGame && this.nextGameStates.length > 0) {
           setTimeout(() => {
-            console.log('Transitioning to new game');
+            console.log(
+              `Transitioning to new game (${this.nextGameStates.length} states buffered)`
+            );
 
-            // Process the pending new game
-            this.gameState = this.pendingNewGame;
-            this.renderer.gameState = this.gameState;
-            this.updateUI();
+            // Swap to the new game's queue
+            this.stateQueue = this.nextGameStates;
+            this.nextGameStates = [];
+            this.pendingNewGame = false;
 
-            // Start fresh with the new game
-            this.stateQueue = [];
-            this.throttledRender();
+            // Set initial state
+            if (this.stateQueue.length > 0) {
+              this.gameState = this.stateQueue[0];
+              this.renderer.gameState = this.gameState;
+              this.updateUI();
+            }
+
+            // Start playback of new game
+            this.startPlayback();
 
             // Re-enable bot if it was active
             if (this.botMode) {
               this.makeBotMove();
             }
-
-            this.pendingNewGame = null;
           }, 3000); // Wait 3 seconds after game over
         }
-      } else if (this.pendingNewGame) {
+      } else if (this.pendingNewGame && this.nextGameStates.length > 0) {
         // New game without game over (shouldn't happen normally)
-        console.log('Processing pending new game');
-        this.gameState = this.pendingNewGame;
-        this.renderer.gameState = this.gameState;
-        this.updateUI();
-        this.throttledRender();
+        console.log(`Processing pending new game (${this.nextGameStates.length} states)`);
+
+        // Swap to the new game's queue
+        this.stateQueue = this.nextGameStates;
+        this.nextGameStates = [];
+        this.pendingNewGame = false;
+
+        // Set initial state
+        if (this.stateQueue.length > 0) {
+          this.gameState = this.stateQueue[0];
+          this.renderer.gameState = this.gameState;
+          this.updateUI();
+        }
+
+        // Start playback
+        this.startPlayback();
 
         if (this.botMode) {
           this.makeBotMove();
         }
-
-        this.pendingNewGame = null;
       }
 
       return;
@@ -715,7 +773,8 @@ class GameClient {
       this.stateQueue = [];
       this.isPlayingBack = false;
       this.pendingGameOver = null; // Clear any pending game over
-      this.pendingNewGame = null; // Clear any pending new game
+      this.pendingNewGame = false; // Clear any pending new game flag
+      this.nextGameStates = []; // Clear any buffered new game states
       if (this.playbackInterval) {
         clearTimeout(this.playbackInterval);
         this.playbackInterval = null;
