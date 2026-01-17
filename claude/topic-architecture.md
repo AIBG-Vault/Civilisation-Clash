@@ -1,5 +1,8 @@
 # AIBG Civilization Clash - Architecture Design
 
+## Documentation Guidelines
+**Important**: Future planning documents in `/claude` should focus on specifications and architecture, not full code implementations. Use pseudocode and interface definitions to illustrate concepts. Actual code belongs in the implementation files.
+
 ## Implementation Status
 **MVP Complete** ✅
 - Basic game logic with soldiers, movement, and combat
