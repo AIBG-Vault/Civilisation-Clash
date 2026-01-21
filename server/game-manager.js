@@ -41,10 +41,7 @@ class GameManager {
       return { success: false, reason: 'Client override not enabled' };
     }
 
-    if (this.gameState === GAME_STATES.PLAYING) {
-      return { success: false, reason: 'Cannot change settings during game' };
-    }
-
+    const oldMode = this.settings.mode;
     const allowedKeys = ['mode', 'turnTimeout'];
     for (const key of allowedKeys) {
       if (settings[key] !== undefined) {
@@ -52,20 +49,54 @@ class GameManager {
       }
     }
 
+    // If mode changed during a game, restart with new map
+    if (this.gameState === GAME_STATES.PLAYING && settings.mode && settings.mode !== oldMode) {
+      console.log(`[GameManager] Mode changed from ${oldMode} to ${settings.mode}, restarting game...`);
+      this.emit('settings_changed', this.settings);
+      this.restartGame();
+      return { success: true, settings: this.settings, restarted: true };
+    }
+
     this.emit('settings_changed', this.settings);
     return { success: true, settings: this.settings };
   }
 
+  /**
+   * Restart the game with current settings (keeps players connected)
+   */
+  restartGame() {
+    if (this.turnTimer) {
+      clearTimeout(this.turnTimer);
+      this.turnTimer = null;
+    }
+
+    this.state = null;
+    this.gameState = GAME_STATES.WAITING;
+    this.pendingActions.clear();
+    this.turnHistory = [];
+
+    this.emit('game_reset', {});
+
+    // Auto-start if both teams still connected
+    if (this.connectionManager.bothTeamsConnected()) {
+      this.startGame();
+    }
+  }
+
   checkAndStartGame() {
+    console.log(`[GameManager] checkAndStartGame - state: ${this.gameState}, bothTeams: ${this.connectionManager.bothTeamsConnected()}`);
     if (this.gameState !== GAME_STATES.WAITING) return false;
     if (!this.connectionManager.bothTeamsConnected()) return false;
 
+    console.log('[GameManager] Starting game...');
     this.startGame();
     return true;
   }
 
   startGame() {
+    console.log(`[GameManager] Starting game with mode: ${this.settings.mode}`);
     this.state = createInitialState({ mode: this.settings.mode });
+    console.log(`[GameManager] Map size: ${this.state.map.width}x${this.state.map.height}, maxTurns: ${this.state.maxTurns}`);
     this.gameState = GAME_STATES.PLAYING;
     this.pendingActions.clear();
     this.turnHistory = [];
@@ -188,6 +219,15 @@ class GameManager {
       finalState: this.getClientState(),
       history: this.turnHistory,
     });
+
+    // Auto-restart after a short delay if both teams still connected
+    setTimeout(() => {
+      if (this.connectionManager.bothTeamsConnected()) {
+        console.log('[GameManager] Auto-restarting game...');
+        this.reset();
+        this.checkAndStartGame();
+      }
+    }, 3000);
   }
 
   getClientState() {
@@ -199,12 +239,17 @@ class GameManager {
       gameOver: this.state.gameOver,
       winner: this.state.winner,
       winReason: this.state.winReason,
-      players: this.state.players.map((p) => ({
-        id: p.id,
-        gold: p.gold,
-        income: p.income,
-        score: p.score,
-      })),
+      players: this.state.players.map((p) => {
+        // Get player name from connection manager
+        const playerConn = this.connectionManager.getPlayerByTeam(p.id);
+        return {
+          id: p.id,
+          gold: p.gold,
+          income: p.income,
+          score: p.score,
+          name: playerConn?.name || `Player ${p.id + 1}`,
+        };
+      }),
       map: {
         width: this.state.map.width,
         height: this.state.map.height,

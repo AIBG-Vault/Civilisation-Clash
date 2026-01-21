@@ -19,7 +19,9 @@ const {
  * Get all valid moves for a unit
  */
 function getValidMoves(state, unit) {
-  if (!unit.canMove) return [];
+  // Handle both canMove (legacy) and can_move_next_turn (spec)
+  const canMove = unit.can_move_next_turn ?? unit.canMove;
+  if (!canMove) return [];
   if (isInZoC(state, unit)) return [];
 
   const moves = [];

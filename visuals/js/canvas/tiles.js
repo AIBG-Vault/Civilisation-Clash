@@ -2,10 +2,9 @@
  * Tile rendering utilities
  */
 const Tiles = {
-  // Terrain colors
+  // Terrain colors (spec: FIELD, MOUNTAIN, WATER, MONUMENT)
   colors: {
-    grass: '#90b060',
-    forest: '#4a7c3f',
+    field: '#90b060',
     mountain: '#8b8b8b',
     water: '#5b9bd5',
     monument: '#ffd700',
@@ -13,8 +12,8 @@ const Tiles = {
 
   // Team colors
   teamColors: {
-    0: { fill: '#0071e3', bg: 'rgba(0, 113, 227, 0.25)', border: '#4da3ff' },
-    1: { fill: '#ff6b35', bg: 'rgba(255, 107, 53, 0.25)', border: '#ff9a76' },
+    0: { fill: '#0071e3', bg: 'rgba(0, 113, 227, 0.45)', border: 'rgba(0, 113, 227, 0.6)' },
+    1: { fill: '#dc2626', bg: 'rgba(220, 38, 38, 0.45)', border: 'rgba(220, 38, 38, 0.6)' },
   },
 
   /**
@@ -39,7 +38,7 @@ const Tiles = {
     ctx.closePath();
 
     // Fill with terrain color
-    const baseColor = this.colors[terrain] || this.colors.grass;
+    const baseColor = this.colors[terrain] || this.colors.field;
     ctx.fillStyle = baseColor;
     ctx.fill();
 
@@ -91,11 +90,6 @@ const Tiles = {
     const scale = Isometric.zoom;
 
     switch (terrain) {
-      case 'forest':
-        // Draw simple tree shapes
-        this.drawTree(ctx, center.x, center.y - 5 * scale, scale);
-        break;
-
       case 'mountain':
         // Draw mountain peak
         this.drawMountain(ctx, center.x, center.y - 5 * scale, scale);
@@ -240,7 +234,7 @@ const Tiles = {
    * @param {number} gridHeight - Grid height
    */
   drawTerritoryBorders(ctx, tiles, gridWidth, gridHeight) {
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1;
 
     for (let x = 0; x < gridWidth; x++) {
       for (let y = 0; y < gridHeight; y++) {

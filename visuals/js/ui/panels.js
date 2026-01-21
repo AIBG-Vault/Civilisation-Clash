@@ -108,12 +108,16 @@ const Panels = {
    * Handle keyboard shortcuts
    */
   handleKeyboard(e) {
-    // Escape to close modals/inspector
+    // Escape to close modals/inspector/cancel interaction
     if (e.key === 'Escape') {
       this.closeAllModals();
       this.hideInspector();
       if (this.terminalOpen) {
         this.toggleTerminal();
+      }
+      // Cancel any interaction mode
+      if (typeof App !== 'undefined') {
+        App.cancelInteractionMode();
       }
     }
 
@@ -127,6 +131,27 @@ const Panels = {
       e.preventDefault();
       if (typeof Renderer !== 'undefined') {
         Renderer.zoomToFit();
+      }
+    }
+
+    // B for build (when playing)
+    if (e.key === 'b' && !e.ctrlKey && !e.metaKey && !this.isInputFocused()) {
+      if (typeof App !== 'undefined' && !App.isSpectator) {
+        toggleModal('modal-build');
+      }
+    }
+
+    // E for expand (when playing)
+    if (e.key === 'e' && !e.ctrlKey && !e.metaKey && !this.isInputFocused()) {
+      if (typeof App !== 'undefined' && !App.isSpectator) {
+        App.startExpandMode();
+      }
+    }
+
+    // C for build city (when playing)
+    if (e.key === 'c' && !e.ctrlKey && !e.metaKey && !this.isInputFocused()) {
+      if (typeof App !== 'undefined' && !App.isSpectator) {
+        App.startCityMode();
       }
     }
   },
@@ -224,18 +249,16 @@ const Panels = {
     // Update owner
     const ownerEl = document.getElementById('inspect-owner');
     if (details.tile && details.tile.owner !== null) {
-      ownerEl.textContent = details.tile.owner === 0 ? 'Blue' : 'Orange';
+      ownerEl.textContent = details.tile.owner === 0 ? 'Blue' : 'Red';
       ownerEl.className = details.tile.owner === 0 ? 'text-team0' : 'text-team1';
     } else {
       ownerEl.textContent = 'Neutral';
       ownerEl.className = '';
     }
 
-    // Update income
+    // Update income (spec: Field=0.5 GOLD/turn, Cities=5 GOLD/turn)
     const incomeMap = {
       FIELD: '+0.5/turn',
-      GRASS: '+0.5/turn',
-      FOREST: '+0.5/turn',
       MOUNTAIN: 'None',
       WATER: 'None',
       MONUMENT: 'Special',
@@ -263,8 +286,9 @@ const Panels = {
         hpBar.classList.add('low');
       }
 
-      document.getElementById('inspect-unit-move').textContent =
-        details.unit.canMove !== false ? 'Yes' : 'No';
+      // Handle both canMove (legacy) and can_move_next_turn (spec)
+      const canMove = details.unit.can_move_next_turn ?? details.unit.canMove;
+      document.getElementById('inspect-unit-move').textContent = canMove !== false ? 'Yes' : 'No';
     } else {
       unitSection.style.display = 'none';
     }
@@ -375,7 +399,8 @@ const Panels = {
           el.textContent = 'Contested';
           el.className = 'text-slate-500';
         } else {
-          el.textContent = turnInfo.monumentOwner === 0 ? 'Blue' : 'Orange';
+          // Use provided name or fall back to Player 1/2
+          el.textContent = turnInfo.monumentOwnerName || `Player ${turnInfo.monumentOwner + 1}`;
           el.className =
             turnInfo.monumentOwner === 0 ? 'text-team0 font-semibold' : 'text-team1 font-semibold';
         }
@@ -408,15 +433,41 @@ const Panels = {
   /**
    * Update connection status
    */
-  updateConnectionStatus(connected) {
-    const dots = document.querySelectorAll('.connection-dot');
-    dots.forEach((dot) => {
-      dot.classList.toggle('connected', connected);
-    });
+  updateConnectionStatus(status) {
+    // status can be: 'connected', 'connecting', 'disconnected', 'reconnecting'
+    const connected = status === 'connected';
+    const mainDot = document.getElementById('connection-status');
+    const statusText = document.getElementById('connection-text');
 
-    const statusText = document.querySelector('#connection-status + span');
+    if (mainDot) {
+      mainDot.classList.toggle('connected', connected);
+      mainDot.classList.toggle('connecting', status === 'connecting' || status === 'reconnecting');
+    }
+
     if (statusText) {
-      statusText.textContent = connected ? 'Live' : 'Disconnected';
+      const textMap = {
+        connected: 'Live',
+        connecting: 'Connecting...',
+        reconnecting: 'Reconnecting...',
+        disconnected: 'Disconnected',
+      };
+      statusText.textContent = textMap[status] || 'Disconnected';
+    }
+  },
+
+  /**
+   * Update player info (name and connection status)
+   */
+  updatePlayerInfo(playerId, info) {
+    const nameEl = document.getElementById(`p${playerId}-name`);
+    const dotEl = document.getElementById(`p${playerId}-connection-dot`);
+
+    if (nameEl && info.name !== undefined) {
+      nameEl.textContent = info.name || 'Waiting...';
+    }
+
+    if (dotEl && info.connected !== undefined) {
+      dotEl.classList.toggle('connected', info.connected);
     }
   },
 
@@ -499,7 +550,7 @@ const Panels = {
     if (actionsSection) actionsSection.classList.remove('hidden');
 
     if (teamName) {
-      teamName.textContent = teamId === 0 ? 'Blue' : 'Orange';
+      teamName.textContent = teamId === 0 ? 'Blue' : 'Red';
       teamName.className = teamId === 0 ? 'font-semibold text-team0' : 'font-semibold text-team1';
     }
 

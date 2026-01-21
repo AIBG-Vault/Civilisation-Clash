@@ -21,6 +21,9 @@ const Renderer = {
   // Interaction state
   isPanning: false,
   lastMousePos: { x: 0, y: 0 },
+  lastClickTime: 0,
+  lastClickPos: { x: -1, y: -1 },
+  doubleClickDelay: 300, // ms
 
   /**
    * Initialize the renderer
@@ -48,14 +51,13 @@ const Renderer = {
     const dpr = window.devicePixelRatio || 1;
     const rect = this.canvas.getBoundingClientRect();
 
+    // Set canvas size (this resets the context transform)
     this.canvas.width = rect.width * dpr;
     this.canvas.height = rect.height * dpr;
 
+    // Reset and apply DPI scale
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(dpr, dpr);
-
-    // Reset canvas style size
-    this.canvas.style.width = rect.width + 'px';
-    this.canvas.style.height = rect.height + 'px';
 
     // Center camera on map center if we have a game state
     if (this.gameState && this.gameState.map) {
@@ -238,25 +240,52 @@ const Renderer = {
   handleTileClick(x, y) {
     if (!this.isValidTile(x, y)) return;
 
+    const now = Date.now();
+    const tile = this.getTileAt(x, y);
+    const unit = this.getUnitAt(x, y);
+    const city = this.getCityAt(x, y);
+
+    // Check for double-click
+    const isDoubleClick =
+      now - this.lastClickTime < this.doubleClickDelay &&
+      this.lastClickPos.x === x &&
+      this.lastClickPos.y === y;
+
+    this.lastClickTime = now;
+    this.lastClickPos = { x, y };
+
+    if (isDoubleClick) {
+      // Double-click - expand territory
+      if (typeof App !== 'undefined') {
+        App.handleTileDoubleClick(x, y, tile);
+      }
+      return;
+    }
+
+    // Single click
     this.selectedTile = { x, y };
 
     // Check if there's a unit at this tile
-    const unit = this.getUnitAt(x, y);
     if (unit) {
       this.selectedUnit = unit;
     } else {
       this.selectedUnit = null;
     }
 
-    // Dispatch selection event
+    // Call App's handler for manual play
+    if (typeof App !== 'undefined') {
+      App.handleTileClick(x, y, tile, unit, city);
+    }
+
+    // Dispatch selection event for inspector panel
     window.dispatchEvent(
       new CustomEvent('tile-selected', {
         detail: {
           x,
           y,
-          tile: this.getTileAt(x, y),
+          tile: tile,
           unit: unit,
-          city: this.getCityAt(x, y),
+          city: city,
         },
       })
     );
@@ -301,8 +330,13 @@ const Renderer = {
   setGameState(state) {
     const firstLoad = !this.gameState;
     this.gameState = state;
+    console.log(
+      '[Renderer] setGameState called, state:',
+      state ? `Turn ${state.turn}, ${state.map?.tiles?.length} tiles` : 'null'
+    );
 
-    if (firstLoad) {
+    if (firstLoad && state) {
+      console.log('[Renderer] First load, centering camera');
       this.centerCamera();
     }
   },

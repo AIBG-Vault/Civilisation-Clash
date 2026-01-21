@@ -6,13 +6,12 @@
   --team-0-light: #4da3ff;
   --team-0-bg: rgba(0, 113, 227, 0.15);
 
-  --team-1: #ff6b35;
-  --team-1-light: #ff9a76;
-  --team-1-bg: rgba(255, 107, 53, 0.15);
+  --team-1: #dc2626;
+  --team-1-light: #f87171;
+  --team-1-bg: rgba(220, 38, 38, 0.15);
 
-  /* Terrain */
-  --grass: #90b060;
-  --forest: #4a7c3f;
+  /* Terrain (spec: FIELD, MOUNTAIN, WATER, MONUMENT) */
+  --field: #90b060;
   --mountain: #8b8b8b;
   --water: #5b9bd5;
   --monument: #ffd700;
@@ -116,12 +115,27 @@ body {
   height: 8px;
   border-radius: 50%;
   display: inline-block;
-  background: var(--danger);
+  background: #8e8e93; /* Gray/disconnected */
 }
 
 .connection-dot.connected {
   background: var(--success);
   animation: pulse 2s infinite;
+}
+
+.connection-dot.connecting {
+  background: var(--warning);
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 @keyframes pulse {

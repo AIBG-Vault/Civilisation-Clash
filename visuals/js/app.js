@@ -15,6 +15,12 @@ const App = {
   teamId: null,
   playerName: 'Spectator',
 
+  // Player names (stored separately to avoid being overwritten by replay states)
+  playerNames: {
+    0: null,
+    1: null,
+  },
+
   // Action queue (for manual play)
   actionQueue: [],
 
@@ -22,6 +28,10 @@ const App = {
   timerInterval: null,
   turnStartTime: null,
   turnTimeout: 2000,
+
+  // Manual play interaction mode
+  interactionMode: null, // null, 'move', 'expand', 'build_city'
+  selectedUnitForMove: null, // Unit selected for move action
 
   /**
    * Initialize the application
@@ -39,16 +49,20 @@ const App = {
       Renderer.init(canvas);
     }
 
-    // Load mock data for demo (remove when WebSocket is connected)
-    this.loadMockGameState();
-
-    // Try to connect to WebSocket
-    // this.connectWebSocket();
-
     // Log initialization
     Panels.addTerminalMessage('Application initialized', 'success');
     Panels.addTerminalMessage('Press T to toggle terminal', 'info');
-    Panels.addTerminalMessage('Use mouse wheel to zoom, drag to pan', 'info');
+    Panels.addTerminalMessage('Use mouse wheel to zoom, right-click drag to pan', 'info');
+
+    // Connect to WebSocket server
+    this.connectWebSocket();
+  },
+
+  /**
+   * Load demo data for testing (can be called manually from console)
+   */
+  loadDemo() {
+    this.loadMockGameState();
   },
 
   /**
@@ -60,7 +74,7 @@ const App = {
     }
 
     Panels.addTerminalMessage(`Connecting to ${this.wsUrl}...`, 'info');
-    Panels.updateConnectionStatus(false);
+    Panels.updateConnectionStatus('connecting');
 
     try {
       this.ws = new WebSocket(this.wsUrl);
@@ -71,6 +85,7 @@ const App = {
       this.ws.onerror = (e) => this.onWebSocketError(e);
     } catch (error) {
       Panels.addTerminalMessage(`Connection error: ${error.message}`, 'error');
+      Panels.updateConnectionStatus('disconnected');
     }
   },
 
@@ -79,15 +94,27 @@ const App = {
    */
   onWebSocketOpen() {
     Panels.addTerminalMessage('Connected to server', 'success');
-    Panels.updateConnectionStatus(true);
+    Panels.updateConnectionStatus('connected');
     this.reconnectAttempts = 0;
 
-    // Authenticate as spectator
-    this.send({
-      type: 'AUTH',
-      password: '',
-      name: this.playerName,
-    });
+    // Check if we have pending player auth (from connectAsPlayer)
+    if (this.pendingPlayerAuth) {
+      const auth = this.pendingPlayerAuth;
+      this.pendingPlayerAuth = null;
+      this.send({
+        type: 'AUTH',
+        password: auth.password,
+        name: auth.name,
+        preferredTeam: auth.preferredTeam,
+      });
+    } else {
+      // Authenticate as spectator
+      this.send({
+        type: 'AUTH',
+        password: 'spectator',
+        name: this.playerName,
+      });
+    }
   },
 
   /**
@@ -107,11 +134,12 @@ const App = {
    */
   onWebSocketClose() {
     Panels.addTerminalMessage('Disconnected from server', 'warning');
-    Panels.updateConnectionStatus(false);
+    Panels.updateConnectionStatus('disconnected');
 
     // Attempt reconnection
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
+      Panels.updateConnectionStatus('reconnecting');
       Panels.addTerminalMessage(
         `Reconnecting in ${this.reconnectDelay / 1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`,
         'info'
@@ -119,6 +147,7 @@ const App = {
       setTimeout(() => this.connectWebSocket(), this.reconnectDelay);
     } else {
       Panels.addTerminalMessage('Max reconnection attempts reached', 'error');
+      Panels.updateConnectionStatus('disconnected');
     }
   },
 
@@ -142,6 +171,8 @@ const App = {
    * Handle server message
    */
   handleServerMessage(data) {
+    console.log('[WS] Received:', data.type, data);
+
     switch (data.type) {
       case 'AUTH_SUCCESS':
         this.handleAuthSuccess(data);
@@ -155,12 +186,16 @@ const App = {
         this.handleGameState(data);
         break;
 
+      case 'GAME_STARTED':
+        Panels.addTerminalMessage(`Game started! Mode: ${data.mode}`, 'success');
+        break;
+
       case 'TURN_START':
         this.handleTurnStart(data);
         break;
 
-      case 'TURN_END':
-        this.handleTurnEnd(data);
+      case 'TURN_RESULT':
+        this.handleTurnResult(data);
         break;
 
       case 'GAME_OVER':
@@ -171,8 +206,55 @@ const App = {
         this.handleServerStatus(data);
         break;
 
+      case 'PLAYER_JOINED':
+        Panels.addTerminalMessage(`Player joined: ${data.name} (Team ${data.team})`, 'info');
+        // Store name persistently
+        this.playerNames[data.team] = data.name;
+        Panels.updatePlayerInfo(data.team, {
+          name: data.name,
+          connected: true,
+        });
+        break;
+
+      case 'PLAYER_LEFT':
+        Panels.addTerminalMessage(`Player left: ${data.name} (Team ${data.team})`, 'warning');
+        // Clear stored name
+        this.playerNames[data.team] = null;
+        Panels.updatePlayerInfo(data.team, {
+          name: `Player ${data.team + 1}`,
+          connected: false,
+        });
+        break;
+
+      case 'GAME_RESET':
+        Panels.addTerminalMessage('Game reset - waiting for players', 'info');
+        this.gameState = null;
+        // Only update renderer if viewing live
+        if (typeof Replay === 'undefined' || Replay.isViewingLive()) {
+          Renderer.setGameState(null);
+        }
+        break;
+
+      case 'SETTINGS_UPDATED':
+        if (data.success) {
+          const msg = data.restarted
+            ? `Settings updated & game restarted: mode=${data.settings?.mode}, timeout=${data.settings?.turnTimeout}ms`
+            : `Settings updated: mode=${data.settings?.mode}, timeout=${data.settings?.turnTimeout}ms`;
+          Panels.addTerminalMessage(msg, 'success');
+        } else {
+          Panels.addTerminalMessage(`Failed to update settings: ${data.reason}`, 'error');
+        }
+        break;
+
+      case 'SETTINGS_CHANGED':
+        Panels.addTerminalMessage(
+          `Settings changed: mode=${data.settings?.mode}, timeout=${data.settings?.turnTimeout}ms`,
+          'info'
+        );
+        break;
+
       case 'ERROR':
-        Panels.addTerminalMessage(`Server error: ${data.message}`, 'error');
+        Panels.addTerminalMessage(`Server error: ${data.error || data.message}`, 'error');
         break;
 
       default:
@@ -217,28 +299,20 @@ const App = {
       return;
     }
 
-    // Connect to WebSocket if not connected
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.connectWebSocket();
-      // Queue auth after connection
-      setTimeout(() => {
-        this.send({
-          type: 'AUTH',
-          password: password,
-          name: 'ManualPlayer',
-          preferredTeam: preferredTeam,
-        });
-      }, 500);
-    } else {
-      this.send({
-        type: 'AUTH',
-        password: password,
-        name: 'ManualPlayer',
-        preferredTeam: preferredTeam,
-      });
+    // Store credentials for reconnection
+    this.pendingPlayerAuth = {
+      password,
+      preferredTeam,
+      name: 'ManualPlayer',
+    };
+
+    // Close current connection and reconnect with player credentials
+    if (this.ws) {
+      this.reconnectAttempts = 0; // Reset so we don't hit max
+      this.ws.close();
     }
 
-    Panels.addTerminalMessage(`Attempting to connect as Team ${preferredTeam}...`, 'info');
+    Panels.addTerminalMessage(`Reconnecting as Team ${preferredTeam}...`, 'info');
   },
 
   /**
@@ -247,31 +321,246 @@ const App = {
   disconnectPlayer() {
     this.isSpectator = true;
     this.teamId = null;
+    this.interactionMode = null;
+    this.selectedUnitForMove = null;
     this.clearActionQueue();
     Panels.showManualDisconnected();
-    Panels.addTerminalMessage('Disconnected from player mode', 'info');
+    Panels.addTerminalMessage(
+      'Disconnected from player mode, reconnecting as spectator...',
+      'info'
+    );
+
+    // Reconnect as spectator
+    if (this.ws) {
+      this.reconnectAttempts = 0;
+      this.ws.close();
+    }
   },
 
   /**
    * Start expand territory mode
    */
   startExpandMode() {
-    Panels.addTerminalMessage('Click a tile adjacent to your territory to expand', 'info');
-    // TODO: Set renderer to expand mode
+    this.interactionMode = 'expand';
+    this.selectedUnitForMove = null;
+    Panels.addTerminalMessage(
+      'Click a tile adjacent to your territory to expand (or double-click any time)',
+      'info'
+    );
   },
 
   /**
    * Start build city mode
    */
   startCityMode() {
+    this.interactionMode = 'build_city';
+    this.selectedUnitForMove = null;
     Panels.addTerminalMessage('Click a tile in your territory to build a city (80 gold)', 'info');
-    // TODO: Set renderer to city mode
+  },
+
+  /**
+   * Cancel current interaction mode
+   */
+  cancelInteractionMode() {
+    this.interactionMode = null;
+    this.selectedUnitForMove = null;
+    Renderer.selectedUnit = null;
+    Panels.addTerminalMessage('Action cancelled', 'info');
+  },
+
+  /**
+   * Handle tile click from renderer (for manual play)
+   */
+  handleTileClick(x, y, tile, unit, city) {
+    // Only handle clicks if we're a player
+    if (this.isSpectator || this.teamId === null) return;
+
+    // Handle based on interaction mode
+    if (this.interactionMode === 'expand') {
+      this.queueExpand(x, y);
+      this.interactionMode = null;
+      return;
+    }
+
+    if (this.interactionMode === 'build_city') {
+      this.queueBuildCity(x, y);
+      this.interactionMode = null;
+      return;
+    }
+
+    // If we have a unit selected for move, clicking a tile sets the destination
+    if (this.selectedUnitForMove) {
+      this.queueMove(this.selectedUnitForMove, x, y);
+      this.selectedUnitForMove = null;
+      Renderer.selectedUnit = null;
+      return;
+    }
+
+    // Clicking on our own city - show build modal
+    if (city && city.owner === this.teamId) {
+      this.showBuildModalForCity(city);
+      return;
+    }
+
+    // Clicking on our own unit - select it for move
+    if (unit && unit.owner === this.teamId) {
+      this.selectedUnitForMove = unit;
+      Renderer.selectedUnit = unit;
+      Panels.addTerminalMessage(
+        `Selected ${unit.type} at (${unit.x}, ${unit.y}) - click destination to move`,
+        'info'
+      );
+      return;
+    }
+
+    // Clicking elsewhere cancels selection
+    this.selectedUnitForMove = null;
+  },
+
+  /**
+   * Handle double-click from renderer (for expand)
+   */
+  handleTileDoubleClick(x, y, tile) {
+    if (this.isSpectator || this.teamId === null) return;
+    this.queueExpand(x, y);
+  },
+
+  /**
+   * Queue an expand action
+   */
+  queueExpand(x, y) {
+    const action = {
+      action: 'EXPAND_TERRITORY',
+      x,
+      y,
+    };
+    this.queueAction(action);
+  },
+
+  /**
+   * Queue a build city action
+   */
+  queueBuildCity(x, y) {
+    const action = {
+      action: 'BUILD_CITY',
+      x,
+      y,
+    };
+    this.queueAction(action);
+  },
+
+  /**
+   * Queue a move action
+   */
+  queueMove(unit, toX, toY) {
+    const action = {
+      action: 'MOVE',
+      from_x: unit.x,
+      from_y: unit.y,
+      to_x: toX,
+      to_y: toY,
+    };
+    this.queueAction(action);
+  },
+
+  /**
+   * Queue a build unit action
+   */
+  queueBuildUnit(cityX, cityY, unitType) {
+    const action = {
+      action: 'BUILD_UNIT',
+      city_x: cityX,
+      city_y: cityY,
+      unit_type: unitType.toUpperCase(),
+    };
+    this.queueAction(action);
+    Panels.closeAllModals();
+  },
+
+  /**
+   * Show build modal for a specific city
+   */
+  showBuildModalForCity(city) {
+    // Update the city dropdown to select this city
+    const select = document.getElementById('build-city');
+    if (select && this.gameState) {
+      const myCities = this.gameState.cities.filter((c) => c.owner === this.teamId);
+      const cityIndex = myCities.findIndex((c) => c.x === city.x && c.y === city.y);
+      if (cityIndex >= 0) {
+        select.value = cityIndex;
+      }
+    }
+    // Store the city for the confirm button
+    this.selectedBuildCity = city;
+    toggleModal('modal-build');
+  },
+
+  /**
+   * Confirm build from modal
+   */
+  confirmBuild() {
+    const unitType = Panels.selectedUnitType || 'soldier';
+    const select = document.getElementById('build-city');
+
+    let city = this.selectedBuildCity;
+    if (!city && select && this.gameState) {
+      const myCities = this.gameState.cities.filter((c) => c.owner === this.teamId);
+      const cityIndex = parseInt(select.value);
+      city = myCities[cityIndex];
+    }
+
+    if (city) {
+      this.queueBuildUnit(city.x, city.y, unitType);
+    } else {
+      Panels.addTerminalMessage('No city selected for build', 'warning');
+    }
+  },
+
+  /**
+   * Apply settings from the settings modal
+   */
+  applySettings() {
+    const modeSelect = document.getElementById('setting-map-size');
+    const timeoutInput = document.getElementById('setting-timeout');
+
+    const mode = modeSelect ? modeSelect.value : 'blitz';
+    const turnTimeout = timeoutInput ? parseInt(timeoutInput.value) || 2000 : 2000;
+
+    Panels.addTerminalMessage(`Applying settings: mode=${mode}, timeout=${turnTimeout}ms`, 'info');
+
+    this.send({
+      type: 'GAME_CONTROL',
+      command: 'update_settings',
+      settings: {
+        mode: mode,
+        turnTimeout: turnTimeout,
+      },
+    });
+  },
+
+  /**
+   * Reset the game
+   */
+  resetGame() {
+    Panels.addTerminalMessage('Requesting game reset...', 'info');
+
+    this.send({
+      type: 'GAME_CONTROL',
+      command: 'reset',
+    });
   },
 
   /**
    * Handle game state update
    */
-  handleGameState(state) {
+  handleGameState(data) {
+    // Server sends { type, state, gameState }
+    const state = data.state;
+    if (!state) {
+      console.error('[App] GAME_STATE message has no state:', data);
+      return;
+    }
+
     this.gameState = state;
 
     // Update renderer
@@ -298,18 +587,51 @@ const App = {
     this.turnStartTime = Date.now();
     this.turnTimeout = data.timeout || 2000;
 
+    // Process state if included
+    if (data.state) {
+      this.gameState = data.state;
+
+      // Only update renderer if viewing live (at the end of replay)
+      const isViewingLive = typeof Replay === 'undefined' || Replay.isViewingLive();
+      if (isViewingLive) {
+        Renderer.setGameState(data.state);
+        this.updateUI();
+      }
+
+      if (typeof Replay !== 'undefined') {
+        Replay.addState(data.state);
+      }
+    }
+
     // Start timer
     this.startTimer();
 
-    Panels.addTerminalMessage(`Turn ${data.turn} started, timeout: ${this.turnTimeout}ms`, 'info');
+    Panels.addTerminalMessage(`Turn ${data.turn} started`, 'info');
   },
 
   /**
-   * Handle turn end
+   * Handle turn result (end of turn with new state)
    */
-  handleTurnEnd(data) {
+  handleTurnResult(data) {
     this.stopTimer();
-    Panels.addTerminalMessage(`Turn ${data.turn} ended`, 'info');
+
+    // Process updated state
+    if (data.state) {
+      this.gameState = data.state;
+
+      // Only update renderer if viewing live (at the end of replay)
+      const isViewingLive = typeof Replay === 'undefined' || Replay.isViewingLive();
+      if (isViewingLive) {
+        Renderer.setGameState(data.state);
+        this.updateUI();
+      }
+
+      if (typeof Replay !== 'undefined') {
+        Replay.addState(data.state);
+      }
+    }
+
+    Panels.addTerminalMessage(`Turn ${data.turn} processed`, 'info');
   },
 
   /**
@@ -342,7 +664,7 @@ const App = {
 
     const state = this.gameState;
 
-    // Update player stats
+    // Update player stats (but NOT names - those come from PLAYER_JOINED events)
     if (state.players) {
       state.players.forEach((player) => {
         const cities = state.cities ? state.cities.filter((c) => c.owner === player.id).length : 0;
@@ -351,6 +673,16 @@ const App = {
           state.map && state.map.tiles
             ? state.map.tiles.filter((t) => t.owner === player.id).length
             : 0;
+
+        // Only update name if we don't have one stored yet (from PLAYER_JOINED)
+        // This prevents old replay states from overwriting the current player names
+        if (!this.playerNames[player.id] && player.name) {
+          this.playerNames[player.id] = player.name;
+          Panels.updatePlayerInfo(player.id, {
+            name: player.name,
+            connected: true,
+          });
+        }
 
         Panels.updatePlayerStats(player.id, {
           gold: player.gold,
@@ -364,10 +696,18 @@ const App = {
     }
 
     // Update turn info
+    // Get monument owner name from stored playerNames
+    const monumentOwnerId = state.monument ? state.monument.controlled_by : null;
+    let monumentOwnerName = null;
+    if (monumentOwnerId !== null) {
+      monumentOwnerName = this.playerNames[monumentOwnerId] || `Player ${monumentOwnerId + 1}`;
+    }
+
     Panels.updateTurnInfo({
       current: state.turn,
       max: state.maxTurns || state.max_turns,
-      monumentOwner: state.monument ? state.monument.controlled_by : null,
+      monumentOwner: monumentOwnerId,
+      monumentOwnerName: monumentOwnerName,
     });
 
     // Update build modal cities
@@ -482,12 +822,12 @@ const App = {
         { x: 6, y: 4, owner: 0 },
       ],
       units: [
-        { x: 3, y: 3, owner: 0, type: 'SOLDIER', hp: 3, canMove: true },
-        { x: 4, y: 2, owner: 0, type: 'ARCHER', hp: 2, canMove: true },
-        { x: 5, y: 4, owner: 0, type: 'RAIDER', hp: 1, canMove: true },
-        { x: 11, y: 6, owner: 1, type: 'SOLDIER', hp: 2, canMove: true },
-        { x: 10, y: 7, owner: 1, type: 'SOLDIER', hp: 3, canMove: false },
-        { x: 9, y: 5, owner: 1, type: 'ARCHER', hp: 1, canMove: true },
+        { x: 3, y: 3, owner: 0, type: 'SOLDIER', hp: 3, can_move_next_turn: true },
+        { x: 4, y: 2, owner: 0, type: 'ARCHER', hp: 2, can_move_next_turn: true },
+        { x: 5, y: 4, owner: 0, type: 'RAIDER', hp: 1, can_move_next_turn: true },
+        { x: 11, y: 6, owner: 1, type: 'SOLDIER', hp: 2, can_move_next_turn: true },
+        { x: 10, y: 7, owner: 1, type: 'SOLDIER', hp: 3, can_move_next_turn: false },
+        { x: 9, y: 5, owner: 1, type: 'ARCHER', hp: 1, can_move_next_turn: true },
       ],
       monument: {
         x: 7,
@@ -525,15 +865,6 @@ const App = {
         else if ((x === 5 && y === 3) || (x === 9 && y === 6) || (x === 4 && y === 7)) {
           type = 'MOUNTAIN';
         }
-        // Some forests
-        else if (
-          (x === 3 && y === 5) ||
-          (x === 8 && y === 3) ||
-          (x === 11 && y === 4) ||
-          (x === 6 && y === 7)
-        ) {
-          type = 'FOREST';
-        }
 
         // Determine owner
         let owner = null;
@@ -562,6 +893,7 @@ const App = {
 const Replay = {
   // Replay state
   history: [], // Array of game states for each turn
+  maxHistory: 5000, // Maximum states to keep
   currentIndex: 0, // Current position in history
   isPlaying: false, // Auto-play state
   playInterval: null, // Auto-play interval
@@ -582,12 +914,28 @@ const Replay = {
   addState(state) {
     this.history.push(JSON.parse(JSON.stringify(state)));
 
+    // Limit history size
+    if (this.history.length > this.maxHistory) {
+      this.history.shift();
+      // Adjust currentIndex since we removed from the beginning
+      if (this.currentIndex > 0) {
+        this.currentIndex--;
+      }
+    }
+
     // If we're at the end, stay at the end
     if (this.currentIndex === this.history.length - 2) {
       this.currentIndex = this.history.length - 1;
     }
 
     this.updateUI();
+  },
+
+  /**
+   * Check if currently viewing the latest (live) state
+   */
+  isViewingLive() {
+    return this.history.length === 0 || this.currentIndex >= this.history.length - 1;
   },
 
   /**
@@ -717,12 +1065,13 @@ const Replay = {
       slider.value = this.currentIndex;
     }
 
+    // Both labels show absolute position / total
     if (currentLabel) {
-      currentLabel.textContent = this.currentIndex;
+      currentLabel.textContent = this.history.length > 0 ? this.currentIndex + 1 : 0;
     }
 
     if (maxLabel) {
-      maxLabel.textContent = this.history.length - 1;
+      maxLabel.textContent = this.history.length;
     }
 
     // Update game status

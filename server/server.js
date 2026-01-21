@@ -183,32 +183,60 @@ function handleGameControl(ws, message, info, connectionManager, gameManager) {
 }
 
 function handleGameEvent(connectionManager, event, data) {
+  console.log(`[Event] ${event}`);
   switch (event) {
     case 'game_started':
+      console.log(`Game started! Mode: ${data.mode}, Timeout: ${data.turnTimeout}ms`);
       connectionManager.broadcast({ type: SERVER_MESSAGES.GAME_STARTED, ...data });
       break;
     case 'turn_started':
+      console.log(`Turn ${data.turn} started`);
       connectionManager.broadcast({ type: SERVER_MESSAGES.TURN_START, ...data });
       break;
     case 'turn_processed':
+      console.log(`Turn ${data.turn} processed`);
       connectionManager.broadcast({ type: SERVER_MESSAGES.TURN_RESULT, ...data });
       break;
     case 'game_ended':
+      console.log(`Game ended! Winner: ${data.winner}, Reason: ${data.reason}`);
       connectionManager.broadcast({ type: SERVER_MESSAGES.GAME_OVER, ...data });
       break;
     case 'settings_changed':
       connectionManager.broadcast({ type: 'SETTINGS_CHANGED', settings: data });
       break;
     case 'game_reset':
+      console.log('Game reset');
       connectionManager.broadcast({ type: 'GAME_RESET' });
+      break;
+    case 'actions_submitted':
+      console.log(`Team ${data.teamId} submitted ${data.validCount}/${data.totalCount} valid actions`);
       break;
   }
 }
 
 // Start server if run directly
 if (require.main === module) {
-  const clientOverride = process.argv.includes('--client-override');
-  createServer({ clientOverride });
+  const args = process.argv.slice(2);
+  const clientOverride = args.includes('--client-override');
+
+  // Parse mode: --mode=standard or --mode=blitz
+  let mode = 'blitz'; // default
+  const modeArg = args.find(a => a.startsWith('--mode='));
+  if (modeArg) {
+    mode = modeArg.split('=')[1];
+  } else if (args.includes('--standard')) {
+    mode = 'standard';
+  }
+
+  // Parse timeout: --timeout=2000
+  let turnTimeout = 2000;
+  const timeoutArg = args.find(a => a.startsWith('--timeout='));
+  if (timeoutArg) {
+    turnTimeout = parseInt(timeoutArg.split('=')[1]) || 2000;
+  }
+
+  console.log(`Settings: mode=${mode}, turnTimeout=${turnTimeout}ms, clientOverride=${clientOverride}`);
+  createServer({ clientOverride, mode, turnTimeout });
 }
 
 module.exports = { createServer, CLIENT_MESSAGES, SERVER_MESSAGES };

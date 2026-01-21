@@ -24,7 +24,7 @@ const Units = {
   // Team colors
   teamColors: {
     0: { fill: '#0071e3', stroke: '#4da3ff', shadow: 'rgba(0, 113, 227, 0.5)' },
-    1: { fill: '#ff6b35', stroke: '#ff9a76', shadow: 'rgba(255, 107, 53, 0.5)' },
+    1: { fill: '#dc2626', stroke: '#f87171', shadow: 'rgba(220, 38, 38, 0.5)' },
   },
 
   /**
@@ -309,11 +309,12 @@ const Units = {
     ctx.closePath();
 
     // Fill based on controller
-    if (controlledBy !== null) {
-      const teamColor = this.teamColors[controlledBy];
+    const teamColor =
+      controlledBy !== null && controlledBy !== undefined ? this.teamColors[controlledBy] : null;
+    if (teamColor) {
       ctx.fillStyle = teamColor.fill;
     } else {
-      ctx.fillStyle = '#ffd700';
+      ctx.fillStyle = '#ffd700'; // Gold when uncontrolled
     }
     ctx.fill();
 
@@ -332,11 +333,11 @@ const Units = {
     ctx.stroke();
 
     // Controller indicator (crown/flag)
-    if (controlledBy !== null) {
-      ctx.fillStyle = this.teamColors[controlledBy].fill;
+    if (teamColor) {
+      ctx.fillStyle = teamColor.fill;
       ctx.font = `${10 * scale}px sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText('', center.x, center.y - 40 * scale);
+      ctx.fillText('♚', center.x, center.y - 40 * scale);
     }
   },
 };

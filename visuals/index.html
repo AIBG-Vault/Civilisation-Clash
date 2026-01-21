@@ -15,10 +15,9 @@
             colors: {
               team0: '#0071e3',
               team0Light: '#4da3ff',
-              team1: '#ff6b35',
-              team1Light: '#ff9a76',
-              grass: '#90b060',
-              forest: '#4a7c3f',
+              team1: '#dc2626',
+              team1Light: '#f87171',
+              field: '#90b060',
               mountain: '#8b8b8b',
               water: '#5b9bd5',
               monument: '#ffd700',
@@ -43,8 +42,8 @@
           onclick="togglePanel('panel-player0')"
         >
           <div class="flex items-center gap-2">
-            <span class="connection-dot connected"></span>
-            <span class="font-semibold text-team0">Blue Empire</span>
+            <span id="p0-connection-dot" class="connection-dot"></span>
+            <span id="p0-name" class="font-semibold text-team0">Player 1</span>
           </div>
           <button class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded">
             <i data-lucide="minus" class="w-4 h-4"></i>
@@ -54,27 +53,27 @@
           <div class="grid grid-cols-3 gap-2 text-sm">
             <div class="stat-item" title="Gold">
               <i data-lucide="coins" class="w-4 h-4 text-yellow-500"></i>
-              <span id="p0-gold">145</span>
+              <span id="p0-gold">-</span>
             </div>
             <div class="stat-item" title="Income">
               <i data-lucide="trending-up" class="w-4 h-4 text-green-500"></i>
-              <span id="p0-income">+12</span>
+              <span id="p0-income">-</span>
             </div>
             <div class="stat-item" title="Score">
               <i data-lucide="star" class="w-4 h-4 text-amber-500"></i>
-              <span id="p0-score">320</span>
+              <span id="p0-score">-</span>
             </div>
             <div class="stat-item" title="Cities">
               <i data-lucide="building-2" class="w-4 h-4 text-slate-500"></i>
-              <span id="p0-cities">2</span>
+              <span id="p0-cities">-</span>
             </div>
             <div class="stat-item" title="Units">
               <i data-lucide="swords" class="w-4 h-4 text-red-500"></i>
-              <span id="p0-units">4</span>
+              <span id="p0-units">-</span>
             </div>
             <div class="stat-item" title="Tiles">
               <i data-lucide="map-pin" class="w-4 h-4 text-blue-500"></i>
-              <span id="p0-tiles">8</span>
+              <span id="p0-tiles">-</span>
             </div>
           </div>
         </div>
@@ -84,23 +83,25 @@
       <div id="panel-turn" class="panel absolute top-4 left-1/2 -translate-x-1/2">
         <div class="flex items-center gap-4 px-4 py-2">
           <div class="flex items-center gap-2">
-            <span id="connection-status" class="connection-dot connected"></span>
-            <span class="text-xs text-slate-500 dark:text-slate-400">Live</span>
+            <span id="connection-status" class="connection-dot"></span>
+            <span id="connection-text" class="text-xs text-slate-500 dark:text-slate-400"
+              >Disconnected</span
+            >
           </div>
           <div class="h-4 w-px bg-slate-300 dark:bg-slate-600"></div>
           <div class="flex items-center gap-1">
             <i data-lucide="rotate-cw" class="w-4 h-4"></i>
-            <span>Turn <span id="turn-current">12</span>/<span id="turn-max">200</span></span>
+            <span>Turn <span id="turn-current">-</span>/<span id="turn-max">-</span></span>
           </div>
           <div class="h-4 w-px bg-slate-300 dark:bg-slate-600"></div>
           <div class="flex items-center gap-1 font-mono">
             <i data-lucide="clock" class="w-4 h-4"></i>
-            <span id="timer">01:45</span>
+            <span id="timer">--:--</span>
           </div>
           <div class="h-4 w-px bg-slate-300 dark:bg-slate-600"></div>
           <div class="flex items-center gap-1">
             <i data-lucide="trophy" class="w-4 h-4 text-monument"></i>
-            <span id="monument-owner" class="text-team0 font-semibold">Blue</span>
+            <span id="monument-owner" class="text-slate-500">-</span>
           </div>
         </div>
       </div>
@@ -112,8 +113,8 @@
           onclick="togglePanel('panel-player1')"
         >
           <div class="flex items-center gap-2">
-            <span class="connection-dot connected"></span>
-            <span class="font-semibold text-team1">Orange Dynasty</span>
+            <span id="p1-connection-dot" class="connection-dot"></span>
+            <span id="p1-name" class="font-semibold text-team1">Player 2</span>
           </div>
           <button class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded">
             <i data-lucide="minus" class="w-4 h-4"></i>
@@ -123,27 +124,27 @@
           <div class="grid grid-cols-3 gap-2 text-sm">
             <div class="stat-item" title="Gold">
               <i data-lucide="coins" class="w-4 h-4 text-yellow-500"></i>
-              <span id="p1-gold">98</span>
+              <span id="p1-gold">-</span>
             </div>
             <div class="stat-item" title="Income">
               <i data-lucide="trending-up" class="w-4 h-4 text-green-500"></i>
-              <span id="p1-income">+8</span>
+              <span id="p1-income">-</span>
             </div>
             <div class="stat-item" title="Score">
               <i data-lucide="star" class="w-4 h-4 text-amber-500"></i>
-              <span id="p1-score">280</span>
+              <span id="p1-score">-</span>
             </div>
             <div class="stat-item" title="Cities">
               <i data-lucide="building-2" class="w-4 h-4 text-slate-500"></i>
-              <span id="p1-cities">1</span>
+              <span id="p1-cities">-</span>
             </div>
             <div class="stat-item" title="Units">
               <i data-lucide="swords" class="w-4 h-4 text-red-500"></i>
-              <span id="p1-units">3</span>
+              <span id="p1-units">-</span>
             </div>
             <div class="stat-item" title="Tiles">
               <i data-lucide="map-pin" class="w-4 h-4 text-blue-500"></i>
-              <span id="p1-tiles">6</span>
+              <span id="p1-tiles">-</span>
             </div>
           </div>
         </div>
@@ -296,7 +297,7 @@
               <label class="block text-xs font-medium mb-1">Team</label>
               <select id="manual-team" class="input-field w-full text-sm">
                 <option value="0">Blue (Team 0)</option>
-                <option value="1">Orange (Team 1)</option>
+                <option value="1">Red (Team 1)</option>
               </select>
             </div>
             <div>
@@ -512,11 +513,10 @@
                   </select>
                 </div>
                 <div>
-                  <label class="block text-sm font-medium mb-1">Map Size</label>
+                  <label class="block text-sm font-medium mb-1">Game Mode</label>
                   <select id="setting-map-size" class="input-field w-full">
-                    <option value="small">Small (10x10)</option>
-                    <option value="medium">Medium (15x15)</option>
-                    <option value="large">Large (20x20)</option>
+                    <option value="standard">Standard (25x15, 200 turns)</option>
+                    <option value="blitz">Blitz (15x10, 50 turns)</option>
                   </select>
                 </div>
                 <div>
@@ -543,6 +543,19 @@
                   </label>
                 </div>
               </div>
+            </div>
+            <div class="border-t border-slate-200 dark:border-slate-700 pt-4 flex gap-2">
+              <button class="action-btn flex-1 justify-center" onclick="App.resetGame()">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                <span>Reset Game</span>
+              </button>
+              <button
+                class="action-btn primary flex-1 justify-center"
+                onclick="App.applySettings()"
+              >
+                <i data-lucide="check" class="w-4 h-4"></i>
+                <span>Apply Settings</span>
+              </button>
             </div>
           </div>
         </div>
@@ -605,17 +618,17 @@
               <button class="unit-card" data-unit="soldier">
                 <div class="unit-icon bg-team0/20 text-team0">S</div>
                 <div class="font-medium">Soldier</div>
-                <div class="text-xs text-slate-500 dark:text-slate-400">50 gold</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">20 gold</div>
               </button>
               <button class="unit-card" data-unit="archer">
                 <div class="unit-icon bg-team0/20 text-team0">A</div>
                 <div class="font-medium">Archer</div>
-                <div class="text-xs text-slate-500 dark:text-slate-400">75 gold</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">25 gold</div>
               </button>
               <button class="unit-card" data-unit="raider">
                 <div class="unit-icon bg-team0/20 text-team0">R</div>
                 <div class="font-medium">Raider</div>
-                <div class="text-xs text-slate-500 dark:text-slate-400">100 gold</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">10 gold</div>
               </button>
             </div>
             <div class="mb-4">
@@ -625,7 +638,7 @@
                 <option value="1">Outpost (7, 5)</option>
               </select>
             </div>
-            <button class="action-btn primary w-full justify-center">
+            <button class="action-btn primary w-full justify-center" onclick="App.confirmBuild()">
               <i data-lucide="plus" class="w-4 h-4"></i>
               <span>Confirm Build</span>
             </button>

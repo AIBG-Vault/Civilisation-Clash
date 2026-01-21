@@ -258,7 +258,7 @@ function getBestMove(state, unit) {
 }
 
 /**
- * Generate actions for a turn - strategic approach
+ * Generate actions for a turn - spend all resources efficiently
  */
 function generateActions(state, playerId) {
   const actions = [];
@@ -267,101 +267,72 @@ function generateActions(state, playerId) {
 
   const myUnits = state.units.filter((u) => u.owner === playerId);
   const myCities = state.cities.filter((c) => c.owner === playerId);
-  const myTiles = state.map.tiles.filter((t) => t.owner === playerId);
-  const enemyUnits = state.units.filter((u) => u.owner !== playerId);
 
   // Track which cities will have units built this turn
   const citiesUsedForBuilding = new Set();
 
-  // === CITY BUILDING STRATEGY ===
-  // Build cities when:
-  // - Have enough gold (80+)
-  // - Have enough territory (at least 15 tiles per city)
-  // - Don't have too many cities yet (max 4)
-  const targetCities = Math.min(4, Math.floor(myTiles.length / 15) + 1);
+  // === SPENDING LOOP ===
+  // Keep spending gold until we can't do anything useful
+  let madeProgress = true;
+  while (madeProgress && remainingGold > 0) {
+    madeProgress = false;
 
-  if (myCities.length < targetCities && remainingGold >= ECONOMY.CITY_COST) {
-    const cityLocations = getValidCityLocations(state, playerId);
-    if (cityLocations.length > 0) {
-      const bestLocation = cityLocations[0];
-      actions.push(bestLocation.action);
-      remainingGold -= ECONOMY.CITY_COST;
-    }
-  }
+    // Priority 1: Build units at all available cities
+    const availableCities = myCities.filter((c) => {
+      const cityKey = `${c.x},${c.y}`;
+      if (citiesUsedForBuilding.has(cityKey)) return false;
+      // Check no unit already at city
+      const unitAtCity = state.units.find((u) => u.x === c.x && u.y === c.y);
+      return !unitAtCity;
+    });
 
-  // === UNIT BUILDING STRATEGY ===
-  // With multiple cities, we can build multiple units per turn!
-  const soldierCount = myUnits.filter((u) => u.type === UNIT_TYPES.SOLDIER).length;
-  const archerCount = myUnits.filter((u) => u.type === UNIT_TYPES.ARCHER).length;
-  const raiderCount = myUnits.filter((u) => u.type === UNIT_TYPES.RAIDER).length;
+    for (const city of availableCities) {
+      const cityKey = `${city.x},${city.y}`;
 
-  // Target army composition based on city count
-  const targetSoldiers = Math.min(6, myCities.length * 2);
-  const targetArchers = Math.min(3, Math.floor(myCities.length * 1.5));
-  const targetRaiders = Math.min(2, myCities.length);
+      // Decide unit type based on army composition
+      const soldierCount = myUnits.filter((u) => u.type === UNIT_TYPES.SOLDIER).length;
+      const archerCount = myUnits.filter((u) => u.type === UNIT_TYPES.ARCHER).length;
 
-  // Build soldiers (main combat unit)
-  if (soldierCount < targetSoldiers) {
-    const soldierBuilds = getValidBuildsForType(state, playerId, UNIT_TYPES.SOLDIER);
-    for (const build of soldierBuilds) {
-      const cityKey = `${build.city_x},${build.city_y}`;
-      if (citiesUsedForBuilding.has(cityKey)) continue;
+      let unitType = UNIT_TYPES.SOLDIER; // Default
 
-      if (remainingGold >= UNIT_STATS[UNIT_TYPES.SOLDIER].cost) {
-        actions.push(build);
-        remainingGold -= UNIT_STATS[UNIT_TYPES.SOLDIER].cost;
+      // Build archers if we have enough soldiers (2:1 ratio)
+      if (soldierCount >= 2 && archerCount < soldierCount / 2) {
+        unitType = UNIT_TYPES.ARCHER;
+      }
+
+      const cost = UNIT_STATS[unitType].cost;
+      if (remainingGold >= cost) {
+        actions.push({
+          action: ACTIONS.BUILD_UNIT,
+          city_x: city.x,
+          city_y: city.y,
+          unit_type: unitType,
+        });
+        remainingGold -= cost;
         citiesUsedForBuilding.add(cityKey);
-
-        if (soldierCount + citiesUsedForBuilding.size >= targetSoldiers) break;
+        madeProgress = true;
       }
     }
-  }
 
-  // Build archers (ranged support)
-  if (archerCount < targetArchers && soldierCount >= 2) {
-    const archerBuilds = getValidBuildsForType(state, playerId, UNIT_TYPES.ARCHER);
-    for (const build of archerBuilds) {
-      const cityKey = `${build.city_x},${build.city_y}`;
-      if (citiesUsedForBuilding.has(cityKey)) continue;
-
-      if (remainingGold >= UNIT_STATS[UNIT_TYPES.ARCHER].cost) {
-        actions.push(build);
-        remainingGold -= UNIT_STATS[UNIT_TYPES.ARCHER].cost;
-        citiesUsedForBuilding.add(cityKey);
-        break; // One archer per turn
+    // Priority 2: Build a city if we have gold and valid locations
+    if (remainingGold >= ECONOMY.CITY_COST) {
+      const cityLocations = getValidCityLocations(state, playerId);
+      if (cityLocations.length > 0) {
+        actions.push(cityLocations[0].action);
+        remainingGold -= ECONOMY.CITY_COST;
+        madeProgress = true;
+        continue; // Re-evaluate after building city
       }
     }
-  }
 
-  // Build raiders (fast flankers) if we have spare cities
-  if (raiderCount < targetRaiders && myCities.length > 2) {
-    const raiderBuilds = getValidBuildsForType(state, playerId, UNIT_TYPES.RAIDER);
-    for (const build of raiderBuilds) {
-      const cityKey = `${build.city_x},${build.city_y}`;
-      if (citiesUsedForBuilding.has(cityKey)) continue;
-
-      if (remainingGold >= UNIT_STATS[UNIT_TYPES.RAIDER].cost) {
-        actions.push(build);
-        remainingGold -= UNIT_STATS[UNIT_TYPES.RAIDER].cost;
-        citiesUsedForBuilding.add(cityKey);
-        break; // One raider per turn
+    // Priority 3: Expand territory
+    if (remainingGold >= ECONOMY.EXPAND_COST) {
+      const expands = getValidExpands(state, playerId);
+      if (expands.length > 0) {
+        actions.push(expands[0]);
+        remainingGold -= ECONOMY.EXPAND_COST;
+        madeProgress = true;
       }
-    }
-  }
-
-  // === TERRITORY EXPANSION ===
-  // Expand territory if we have gold left (important for income and city building)
-  const expands = getValidExpands(state, playerId);
-  const maxExpansions = Math.min(5, Math.floor(remainingGold / ECONOMY.EXPAND_COST));
-  let expansionCount = 0;
-
-  for (const expand of expands) {
-    if (remainingGold >= ECONOMY.EXPAND_COST && expansionCount < maxExpansions) {
-      actions.push(expand);
-      remainingGold -= ECONOMY.EXPAND_COST;
-      expansionCount++;
-    } else {
-      break;
     }
   }
 
