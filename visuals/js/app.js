@@ -396,13 +396,7 @@ const App = {
       return;
     }
 
-    // Clicking on our own city - show build modal
-    if (city && city.owner === this.teamId) {
-      this.showBuildModalForCity(city);
-      return;
-    }
-
-    // Clicking on our own unit - select it for move
+    // Clicking on our own unit - select it for move (check BEFORE city so units on cities can be selected)
     if (unit && unit.owner === this.teamId) {
       this.selectedUnitForMove = unit;
       Renderer.selectedUnit = unit;
@@ -410,6 +404,12 @@ const App = {
         `Selected ${unit.type} at (${unit.x}, ${unit.y}) - click destination to move`,
         'info'
       );
+      return;
+    }
+
+    // Clicking on our own city (without a unit) - show build modal
+    if (city && city.owner === this.teamId) {
+      this.showBuildModalForCity(city);
       return;
     }
 
