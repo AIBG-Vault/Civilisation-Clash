@@ -1,12 +1,23 @@
 // Connection and authentication management
 
-const passwords = require('./passwords.json');
+const fs = require('fs');
+const path = require('path');
 
 class ConnectionManager {
-  constructor() {
+  constructor(options = {}) {
     this.connections = new Map(); // ws -> connectionInfo
     this.names = new Set();
     this.authTimeout = 5000;
+    this.protectedMode = options.protectedMode || false;
+
+    // Load passwords
+    const passwordsPath = path.join(__dirname, 'passwords.json');
+    try {
+      this.passwords = JSON.parse(fs.readFileSync(passwordsPath, 'utf8'));
+    } catch (err) {
+      console.error('Failed to load passwords.json:', err.message);
+      this.passwords = { '0': 'player', '1': 'player', spectator: 'spectator' };
+    }
   }
 
   addConnection(ws) {
@@ -66,30 +77,70 @@ class ConnectionManager {
     let teamId = null;
     let isSpectator = false;
 
-    if (password === passwords.players) {
-      // Player - try preferredTeam first, then fall back to any available
-      if (preferredTeam === 0 || preferredTeam === 1) {
-        if (!this.isTeamTaken(preferredTeam)) {
-          teamId = preferredTeam;
-        } else if (!this.isTeamTaken(1 - preferredTeam)) {
-          teamId = 1 - preferredTeam;
-        } else {
-          return { success: false, reason: 'Both teams are already taken' };
-        }
-      } else {
-        if (!this.isTeamTaken(0)) {
-          teamId = 0;
-        } else if (!this.isTeamTaken(1)) {
-          teamId = 1;
-        } else {
-          return { success: false, reason: 'Both teams are already taken' };
+    if (this.protectedMode) {
+      // Protected mode: password determines the team
+      // Look up which team this password belongs to
+      let matched = false;
+
+      // Check spectator first
+      if (password === this.passwords.spectator) {
+        teamId = -1;
+        isSpectator = true;
+        matched = true;
+      }
+
+      // Check team passwords (keys "0", "1", etc.)
+      if (!matched) {
+        for (const [key, pass] of Object.entries(this.passwords)) {
+          if (key === 'spectator') continue;
+          if (password === pass) {
+            teamId = parseInt(key);
+            matched = true;
+            break;
+          }
         }
       }
-    } else if (password === passwords.spectator) {
-      teamId = -1;
-      isSpectator = true;
+
+      if (!matched) {
+        return { success: false, reason: 'Invalid password' };
+      }
+
+      // In protected mode, check if this team slot is already taken
+      if (!isSpectator && this.isTeamTaken(teamId)) {
+        return { success: false, reason: 'Team slot already occupied' };
+      }
     } else {
-      return { success: false, reason: 'Invalid password' };
+      // Legacy mode: single shared player password, client picks team
+      // Support both old format {"players":"x","spectator":"y"} and
+      // new format {"0":"x","1":"y","spectator":"z"}
+      const playerPass = this.passwords.players || this.passwords['0'];
+      const spectatorPass = this.passwords.spectator;
+
+      if (password === playerPass) {
+        // Player - try preferredTeam first, then fall back
+        if (preferredTeam === 0 || preferredTeam === 1) {
+          if (!this.isTeamTaken(preferredTeam)) {
+            teamId = preferredTeam;
+          } else if (!this.isTeamTaken(1 - preferredTeam)) {
+            teamId = 1 - preferredTeam;
+          } else {
+            return { success: false, reason: 'Both teams are already taken' };
+          }
+        } else {
+          if (!this.isTeamTaken(0)) {
+            teamId = 0;
+          } else if (!this.isTeamTaken(1)) {
+            teamId = 1;
+          } else {
+            return { success: false, reason: 'Both teams are already taken' };
+          }
+        }
+      } else if (password === spectatorPass) {
+        teamId = -1;
+        isSpectator = true;
+      } else {
+        return { success: false, reason: 'Invalid password' };
+      }
     }
 
     if (info.authTimer) {
@@ -104,6 +155,7 @@ class ConnectionManager {
     info.isSpectator = isSpectator;
     info.name = assignedName;
 
+    // IMPORTANT: Never include the password in the return value
     return { success: true, teamId, assignedName, isSpectator };
   }
 

@@ -16,7 +16,6 @@ const Panels = {
 
   // Modal references
   modals: {
-    settings: null,
     replays: null,
     build: null,
   },
@@ -42,7 +41,6 @@ const Panels = {
     this.elements.terminal = document.getElementById('terminal');
 
     // Get modal elements
-    this.modals.settings = document.getElementById('modal-settings');
     this.modals.replays = document.getElementById('modal-replays');
     this.modals.build = document.getElementById('modal-build');
 
@@ -456,18 +454,22 @@ const Panels = {
   },
 
   /**
-   * Update player info (name and connection status)
+   * Update player display name (in player panel header)
    */
   updatePlayerInfo(playerId, info) {
     const nameEl = document.getElementById(`p${playerId}-name`);
-    const dotEl = document.getElementById(`p${playerId}-connection-dot`);
-
     if (nameEl && info.name !== undefined) {
       nameEl.textContent = info.name || 'Waiting...';
     }
+  },
 
-    if (dotEl && info.connected !== undefined) {
-      dotEl.classList.toggle('connected', info.connected);
+  /**
+   * Update player connection dot (in server panel)
+   */
+  updatePlayerConnection(playerId, connected) {
+    const dotEl = document.getElementById(`p${playerId}-connection-dot`);
+    if (dotEl) {
+      dotEl.classList.toggle('connected', connected);
     }
   },
 
@@ -525,6 +527,48 @@ const Panels = {
           index === 0 ? `Capital (${city.x}, ${city.y})` : `City (${city.x}, ${city.y})`;
         select.appendChild(option);
       });
+  },
+
+  /**
+   * Update the replays modal with saved games
+   */
+  updateReplaysModal(saves) {
+    const container = document.getElementById('replays-list');
+    if (!container) return;
+
+    if (saves.length === 0) {
+      container.innerHTML = '<div class="text-slate-400 text-sm italic">No saved games yet</div>';
+      return;
+    }
+
+    // Sort newest first
+    saves.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+
+    container.innerHTML = saves
+      .map((save) => {
+        const p0 = save.players?.[0]?.name || '?';
+        const p1 = save.players?.[1]?.name || '?';
+        const winnerText =
+          save.winner === null ? 'Tie' : save.winner === 0 ? `${p0} won` : `${p1} won`;
+        const date = save.timestamp ? new Date(save.timestamp).toLocaleString() : 'Unknown date';
+        return `
+          <div class="replay-item cursor-pointer" onclick="App.loadSavedGame('${save.id}')">
+            <div>
+              <div class="flex items-center gap-2">
+                <i data-lucide="file-video" class="w-4 h-4"></i>
+                <span class="font-medium">${p0} vs ${p1}</span>
+              </div>
+              <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">${date} &middot; ${save.mode || '?'} &middot; Turn ${save.finalTurn || '?'}/${save.maxTurns || '?'}</div>
+            </div>
+            <span class="text-xs text-slate-500 dark:text-slate-400">${winnerText}</span>
+          </div>
+        `;
+      })
+      .join('');
+
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
   },
 
   /**
@@ -661,6 +705,25 @@ function closeInspector() {
 
 function toggleManualPanel() {
   Panels.toggleManualPanel();
+}
+
+function toggleServerSettings() {
+  const el = document.getElementById('server-settings');
+  if (!el) return;
+  const wasHidden = el.classList.contains('hidden');
+  el.classList.toggle('hidden');
+
+  // Flip chevron
+  const chevron = document.getElementById('settings-chevron');
+  if (chevron) {
+    chevron.setAttribute('data-lucide', wasHidden ? 'chevron-up' : 'chevron-down');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+
+  // Fetch latest settings from server when opening
+  if (wasHidden && typeof App !== 'undefined') {
+    App.requestStatus();
+  }
 }
 
 // Export for module use

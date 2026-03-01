@@ -12,6 +12,8 @@ const CLIENT_MESSAGES = {
   GET_STATUS: 'GET_STATUS',
   SUBMIT_ACTIONS: 'SUBMIT_ACTIONS',
   GAME_CONTROL: 'GAME_CONTROL',
+  LIST_SAVES: 'LIST_SAVES',
+  LOAD_SAVE: 'LOAD_SAVE',
 };
 
 const SERVER_MESSAGES = {
@@ -30,11 +32,12 @@ const SERVER_MESSAGES = {
 };
 
 function createServer(options = {}) {
-  const { port = PORT, clientOverride = false, turnTimeout = 2000 } = options;
+  const { port = PORT, turnTimeout = 2000, protectedMode = false, maxSaves = 20 } = options;
+  const clientOverride = !protectedMode;
 
   const wss = new WebSocketServer({ port });
-  const connectionManager = new ConnectionManager();
-  const gameManager = new GameManager(connectionManager, { clientOverride, turnTimeout });
+  const connectionManager = new ConnectionManager({ protectedMode });
+  const gameManager = new GameManager(connectionManager, { clientOverride, turnTimeout, maxSaves });
 
   gameManager.setEventCallback((event, data) => {
     handleGameEvent(connectionManager, event, data);
@@ -108,6 +111,12 @@ function handleMessage(ws, message, connectionManager, gameManager) {
     case CLIENT_MESSAGES.GAME_CONTROL:
       handleGameControl(ws, message, info, connectionManager, gameManager);
       break;
+    case CLIENT_MESSAGES.LIST_SAVES:
+      connectionManager.send(ws, { type: 'SAVES_LIST', saves: gameManager.listSaves() });
+      break;
+    case CLIENT_MESSAGES.LOAD_SAVE:
+      connectionManager.send(ws, { type: 'SAVE_LOADED', ...gameManager.loadSave(message.saveId) });
+      break;
     default:
       connectionManager.send(ws, { type: SERVER_MESSAGES.ERROR, error: `Unknown message type: ${type}` });
   }
@@ -175,7 +184,14 @@ function handleGameControl(ws, message, info, connectionManager, gameManager) {
       break;
     case 'reset':
       gameManager.reset();
+      gameManager.checkAndStartGame();
       connectionManager.send(ws, { type: 'GAME_RESET', success: true });
+      break;
+    case 'pause':
+      connectionManager.send(ws, { type: 'PAUSE_UPDATED', ...gameManager.pause() });
+      break;
+    case 'resume':
+      connectionManager.send(ws, { type: 'PAUSE_UPDATED', ...gameManager.resume() });
       break;
     default:
       connectionManager.send(ws, { type: SERVER_MESSAGES.ERROR, error: `Unknown command: ${command}` });
@@ -199,7 +215,13 @@ function handleGameEvent(connectionManager, event, data) {
       break;
     case 'game_ended':
       console.log(`Game ended! Winner: ${data.winner}, Reason: ${data.reason}`);
-      connectionManager.broadcast({ type: SERVER_MESSAGES.GAME_OVER, ...data });
+      // Only broadcast metadata — don't send full history/finalState (large, unused by frontend)
+      connectionManager.broadcast({
+        type: SERVER_MESSAGES.GAME_OVER,
+        winner: data.winner,
+        reason: data.reason,
+        saveId: data.saveId,
+      });
       break;
     case 'settings_changed':
       connectionManager.broadcast({ type: 'SETTINGS_CHANGED', settings: data });
@@ -217,7 +239,7 @@ function handleGameEvent(connectionManager, event, data) {
 // Start server if run directly
 if (require.main === module) {
   const args = process.argv.slice(2);
-  const clientOverride = args.includes('--client-override');
+  const protectedMode = args.includes('--protected');
 
   // Parse mode: --mode=standard or --mode=blitz
   let mode = 'blitz'; // default
@@ -235,8 +257,18 @@ if (require.main === module) {
     turnTimeout = parseInt(timeoutArg.split('=')[1]) || 2000;
   }
 
-  console.log(`Settings: mode=${mode}, turnTimeout=${turnTimeout}ms, clientOverride=${clientOverride}`);
-  createServer({ clientOverride, mode, turnTimeout });
+  // Parse max saves: --max-saves=20
+  let maxSaves = 20;
+  const maxSavesArg = args.find(a => a.startsWith('--max-saves='));
+  if (maxSavesArg) {
+    maxSaves = parseInt(maxSavesArg.split('=')[1]) || 20;
+  }
+
+  console.log(`Settings: mode=${mode}, turnTimeout=${turnTimeout}ms, protected=${protectedMode}, maxSaves=${maxSaves}`);
+  if (protectedMode) {
+    console.log('PROTECTED MODE: Passwords required, client settings override disabled');
+  }
+  createServer({ mode, turnTimeout, protectedMode, maxSaves });
 }
 
 module.exports = { createServer, CLIENT_MESSAGES, SERVER_MESSAGES };

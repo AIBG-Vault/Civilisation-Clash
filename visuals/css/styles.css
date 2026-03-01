@@ -664,8 +664,48 @@ body {
 }
 
 /* ==========================================
-   Replay Slider
+   Replay Bar
    ========================================== */
+
+#panel-replay .control-btn {
+  width: 32px;
+  height: 32px;
+}
+
+/* Number inputs — hide spinner arrows */
+#game-number-input,
+#turn-input {
+  -moz-appearance: textfield;
+}
+#game-number-input::-webkit-inner-spin-button,
+#game-number-input::-webkit-outer-spin-button,
+#turn-input::-webkit-inner-spin-button,
+#turn-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Turn nav buttons in top bar */
+#panel-turn .control-btn {
+  width: 28px;
+  height: 28px;
+}
+
+/* Go-live button */
+.btn-go-live {
+  color: var(--success) !important;
+}
+.btn-go-live:hover {
+  background: rgba(52, 199, 89, 0.15) !important;
+}
+
+/* ==========================================
+   Global Slider + Game-boundary Dots
+   ========================================== */
+
+#global-slider-container {
+  position: relative;
+}
 
 .replay-slider {
   -webkit-appearance: none;
@@ -684,56 +724,163 @@ body {
 .replay-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   background: var(--team-0);
   border-radius: 50%;
   cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  position: relative;
+  z-index: 2;
 }
-
 .replay-slider::-webkit-slider-thumb:hover {
   transform: scale(1.2);
   background: var(--team-0-light);
 }
 
 .replay-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   background: var(--team-0);
   border-radius: 50%;
   cursor: pointer;
   border: none;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  position: relative;
+  z-index: 2;
 }
-
 .replay-slider::-moz-range-thumb:hover {
   transform: scale(1.2);
   background: var(--team-0-light);
 }
 
-/* Replay bar controls */
-#panel-replay .control-btn {
-  width: 32px;
+#global-slider-dots {
+  position: absolute;
+  top: 0;
+  left: 7px; /* half of thumb width */
+  right: 7px;
+  height: 100%;
+  pointer-events: none;
+}
+
+.slider-game-dot {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 1.5px solid rgba(255, 255, 255, 0.8);
+  z-index: 1;
+}
+
+[data-theme='dark'] .slider-game-dot {
+  border-color: rgba(0, 0, 0, 0.4);
+}
+
+/* ==========================================
+   Play Button + Speed Popup
+   ========================================== */
+
+.play-btn-wrapper {
+  position: relative;
+}
+
+.play-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 32px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.play-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+[data-theme='dark'] .play-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
-/* Game status indicators */
-#game-status-dot.live {
+.speed-popup {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--card-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  z-index: 200;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.play-btn-wrapper:hover .speed-popup {
+  display: flex;
+}
+
+.speed-option {
+  padding: 5px 16px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 6px;
+  color: var(--text);
+  white-space: nowrap;
+  font-family: inherit;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+.speed-option:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+[data-theme='dark'] .speed-option:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.speed-option.active {
+  background: var(--team-0);
+  color: white;
+}
+.speed-option.active:hover {
+  background: var(--team-0-light);
+}
+
+/* Live mode play button */
+.play-btn.play-btn-live {
+  color: var(--success);
+}
+.play-btn.play-btn-live:hover {
+  background: rgba(52, 199, 89, 0.15);
+}
+
+/* Live speed option */
+.speed-option-live {
+  color: var(--success);
+  font-weight: 600;
+}
+.speed-option-live.active {
   background: var(--success);
-  animation: pulse 2s infinite;
+  color: white;
 }
-
-#game-status-dot.ended {
-  background: var(--text-muted);
-  animation: none;
-}
-
-#game-status-dot.paused {
-  background: var(--warning);
-  animation: none;
+.speed-option-live.active:hover {
+  background: #2db84d;
 }
 
 /* ==========================================
@@ -788,6 +935,25 @@ body:has(.slide-panel-right.open) #panel-inspector.visible {
 }
 
 /* ==========================================
+   Server Panel (Bottom Right)
+   ========================================== */
+
+#panel-server .action-btn {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+#panel-server .btn-paused {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+#panel-server .input-field {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+/* ==========================================
    Responsive: Replay Bar
    ========================================== */
 
@@ -801,10 +967,6 @@ body:has(.slide-panel-right.open) #panel-inspector.visible {
   #panel-replay .flex {
     flex-wrap: wrap;
     justify-content: center;
-  }
-
-  .replay-slider {
-    min-width: 120px;
   }
 }
 
@@ -821,9 +983,5 @@ body:has(.slide-panel-right.open) #panel-inspector.visible {
   #panel-replay .control-btn {
     width: 28px;
     height: 28px;
-  }
-
-  #replay-speed {
-    display: none;
   }
 }

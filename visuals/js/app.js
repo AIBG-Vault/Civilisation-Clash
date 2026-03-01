@@ -188,6 +188,10 @@ const App = {
 
       case 'GAME_STARTED':
         Panels.addTerminalMessage(`Game started! Mode: ${data.mode}`, 'success');
+        // Reset live buffer — doesn't interrupt save replays
+        if (typeof Replay !== 'undefined') {
+          Replay.resetLiveBuffer();
+        }
         break;
 
       case 'TURN_START':
@@ -208,31 +212,32 @@ const App = {
 
       case 'PLAYER_JOINED':
         Panels.addTerminalMessage(`Player joined: ${data.name} (Team ${data.team})`, 'info');
-        // Store name persistently
         this.playerNames[data.team] = data.name;
-        Panels.updatePlayerInfo(data.team, {
-          name: data.name,
-          connected: true,
-        });
+        // Update connection dot in server panel
+        Panels.updatePlayerConnection(data.team, true);
+        // If viewing live, update name immediately (next state will also have it)
+        if (typeof Replay === 'undefined' || Replay.isViewingLive()) {
+          Panels.updatePlayerInfo(data.team, { name: data.name });
+        }
         break;
 
       case 'PLAYER_LEFT':
         Panels.addTerminalMessage(`Player left: ${data.name} (Team ${data.team})`, 'warning');
-        // Clear stored name
         this.playerNames[data.team] = null;
-        Panels.updatePlayerInfo(data.team, {
-          name: `Player ${data.team + 1}`,
-          connected: false,
-        });
+        // Update connection dot in server panel
+        Panels.updatePlayerConnection(data.team, false);
+        // If viewing live, reset name to default
+        if (typeof Replay === 'undefined' || Replay.isViewingLive()) {
+          Panels.updatePlayerInfo(data.team, { name: `Player ${data.team + 1}` });
+        }
         break;
 
       case 'GAME_RESET':
         Panels.addTerminalMessage('Game reset - waiting for players', 'info');
         this.gameState = null;
-        // Only update renderer if viewing live
-        if (typeof Replay === 'undefined' || Replay.isViewingLive()) {
-          Renderer.setGameState(null);
-        }
+        // Don't blank the canvas here — keep the last frame visible
+        // until the next game's first state arrives. This prevents the
+        // visual flash/refresh between games.
         break;
 
       case 'SETTINGS_UPDATED':
@@ -251,6 +256,19 @@ const App = {
           `Settings changed: mode=${data.settings?.mode}, timeout=${data.settings?.turnTimeout}ms`,
           'info'
         );
+        break;
+
+      case 'PAUSE_UPDATED':
+        this.updatePauseButton(data.paused);
+        Panels.addTerminalMessage(data.paused ? 'Server paused' : 'Server resumed', 'info');
+        break;
+
+      case 'SAVES_LIST':
+        this.handleSavesList(data);
+        break;
+
+      case 'SAVE_LOADED':
+        this.handleSaveLoaded(data);
         break;
 
       case 'ERROR':
@@ -280,8 +298,9 @@ const App = {
       Panels.showManualConnected(this.teamId);
     }
 
-    // Request current state
+    // Request current state and server status (for pause state)
     this.send({ type: 'GET_STATE' });
+    this.requestStatus();
   },
 
   /**
@@ -522,11 +541,20 @@ const App = {
   applySettings() {
     const modeSelect = document.getElementById('setting-map-size');
     const timeoutInput = document.getElementById('setting-timeout');
+    const noTimeoutCheck = document.getElementById('setting-no-timeout');
 
     const mode = modeSelect ? modeSelect.value : 'blitz';
-    const turnTimeout = timeoutInput ? parseInt(timeoutInput.value) || 2000 : 2000;
+    const turnTimeout =
+      noTimeoutCheck && noTimeoutCheck.checked
+        ? 0
+        : timeoutInput
+          ? parseInt(timeoutInput.value) || 2000
+          : 2000;
 
-    Panels.addTerminalMessage(`Applying settings: mode=${mode}, timeout=${turnTimeout}ms`, 'info');
+    Panels.addTerminalMessage(
+      `Applying settings: mode=${mode}, timeout=${turnTimeout || 'none'}`,
+      'info'
+    );
 
     this.send({
       type: 'GAME_CONTROL',
@@ -539,15 +567,33 @@ const App = {
   },
 
   /**
-   * Reset the game
+   * Toggle server pause state
    */
-  resetGame() {
-    Panels.addTerminalMessage('Requesting game reset...', 'info');
-
+  togglePause() {
+    const btn = document.getElementById('btn-pause');
+    const isPaused = btn && btn.dataset.paused === 'true';
     this.send({
       type: 'GAME_CONTROL',
-      command: 'reset',
+      command: isPaused ? 'resume' : 'pause',
     });
+  },
+
+  /**
+   * Update pause button UI
+   */
+  updatePauseButton(paused) {
+    const btn = document.getElementById('btn-pause');
+    const icon = document.getElementById('pause-icon');
+    const label = document.getElementById('pause-label');
+    if (!btn) return;
+
+    btn.dataset.paused = paused ? 'true' : 'false';
+    if (label) label.textContent = paused ? 'Start' : 'Stop';
+    if (icon) {
+      icon.setAttribute('data-lucide', paused ? 'play' : 'square');
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+    btn.classList.toggle('btn-paused', paused);
   },
 
   /**
@@ -563,16 +609,16 @@ const App = {
 
     this.gameState = state;
 
-    // Update renderer
-    Renderer.setGameState(state);
-
-    // Add to replay history
+    // Add to replay history (always buffers to liveStates)
     if (typeof Replay !== 'undefined') {
       Replay.addState(state);
     }
 
-    // Update UI panels
-    this.updateUI();
+    // Only update renderer if viewing live
+    if (typeof Replay === 'undefined' || Replay.isViewingLive()) {
+      Renderer.setGameState(state);
+      this.updateUI();
+    }
 
     Panels.addTerminalMessage(
       `Game state received: Turn ${state.turn}/${state.maxTurns || state.max_turns}`,
@@ -591,21 +637,19 @@ const App = {
     if (data.state) {
       this.gameState = data.state;
 
-      // Only update renderer if viewing live (at the end of replay)
-      const isViewingLive = typeof Replay === 'undefined' || Replay.isViewingLive();
-      if (isViewingLive) {
-        Renderer.setGameState(data.state);
-        this.updateUI();
-      }
-
+      // Add to replay (deduplicates by turn number)
       if (typeof Replay !== 'undefined') {
         Replay.addState(data.state);
       }
+
+      // Only update renderer if viewing live
+      if (typeof Replay === 'undefined' || Replay.isViewingLive()) {
+        Renderer.setGameState(data.state);
+        this.updateUI();
+      }
     }
 
-    // Start timer
     this.startTimer();
-
     Panels.addTerminalMessage(`Turn ${data.turn} started`, 'info');
   },
 
@@ -615,19 +659,18 @@ const App = {
   handleTurnResult(data) {
     this.stopTimer();
 
-    // Process updated state
     if (data.state) {
       this.gameState = data.state;
 
-      // Only update renderer if viewing live (at the end of replay)
-      const isViewingLive = typeof Replay === 'undefined' || Replay.isViewingLive();
-      if (isViewingLive) {
-        Renderer.setGameState(data.state);
-        this.updateUI();
-      }
-
+      // Add to replay (deduplicates by turn number)
       if (typeof Replay !== 'undefined') {
         Replay.addState(data.state);
+      }
+
+      // Only update renderer if viewing live
+      if (typeof Replay === 'undefined' || Replay.isViewingLive()) {
+        Renderer.setGameState(data.state);
+        this.updateUI();
       }
     }
 
@@ -646,14 +689,98 @@ const App = {
   },
 
   /**
+   * Request server status (includes current settings)
+   */
+  requestStatus() {
+    this.send({ type: 'GET_STATUS' });
+  },
+
+  /**
    * Handle server status
    */
   handleServerStatus(data) {
-    // Update settings modal with server status
-    Panels.addTerminalMessage(
-      `Server status: ${data.gameActive ? 'Game Active' : 'Waiting'}`,
-      'info'
-    );
+    Panels.addTerminalMessage(`Server status: ${data.gameState || 'unknown'}`, 'info');
+
+    // Sync pause button
+    if (data.paused !== undefined) {
+      this.updatePauseButton(data.paused);
+    }
+
+    // Sync player connection dots from server status
+    if (data.players) {
+      const team0Connected = data.players.some((p) => p.type === 'player' && p.team === 0);
+      const team1Connected = data.players.some((p) => p.type === 'player' && p.team === 1);
+      Panels.updatePlayerConnection(0, team0Connected);
+      Panels.updatePlayerConnection(1, team1Connected);
+
+      // Store names of connected players
+      data.players.forEach((p) => {
+        if (p.type === 'player' && (p.team === 0 || p.team === 1)) {
+          this.playerNames[p.team] = p.name;
+        }
+      });
+      // Clear names for disconnected teams
+      if (!team0Connected) this.playerNames[0] = null;
+      if (!team1Connected) this.playerNames[1] = null;
+    }
+
+    // Populate settings fields from server
+    if (data.settings) {
+      const modeSelect = document.getElementById('setting-map-size');
+      const timeoutInput = document.getElementById('setting-timeout');
+      const noTimeoutCheck = document.getElementById('setting-no-timeout');
+
+      if (modeSelect) modeSelect.value = data.settings.mode || 'blitz';
+      if (timeoutInput) {
+        timeoutInput.value = data.settings.turnTimeout || 2000;
+        timeoutInput.disabled = !data.settings.turnTimeout;
+      }
+      if (noTimeoutCheck) noTimeoutCheck.checked = !data.settings.turnTimeout;
+    }
+  },
+
+  /**
+   * Request saved games list from server
+   */
+  requestSavesList() {
+    this.send({ type: 'LIST_SAVES' });
+  },
+
+  /**
+   * Load a saved game for replay
+   */
+  loadSavedGame(saveId) {
+    this.send({ type: 'LOAD_SAVE', saveId });
+  },
+
+  /**
+   * Handle saves list response
+   */
+  handleSavesList(data) {
+    const saves = data.saves || [];
+    Panels.updateReplaysModal(saves);
+    Panels.addTerminalMessage(`Loaded ${saves.length} saved games`, 'info');
+  },
+
+  /**
+   * Handle loaded save response
+   */
+  handleSaveLoaded(data) {
+    if (!data.success) {
+      Panels.addTerminalMessage(`Failed to load save: ${data.reason}`, 'error');
+      return;
+    }
+
+    const label = `${data.players[0].name} vs ${data.players[1].name}`;
+    Panels.addTerminalMessage(`Loaded replay: ${label}`, 'success');
+
+    // Load the state history into replay (separate from live buffer)
+    if (data.states && data.states.length > 0) {
+      Replay.loadHistory(data.states, data.id, label);
+    }
+
+    // Close the modal
+    Panels.closeAllModals();
   },
 
   /**
@@ -664,7 +791,7 @@ const App = {
 
     const state = this.gameState;
 
-    // Update player stats (but NOT names - those come from PLAYER_JOINED events)
+    // Update player stats and names from the viewed game state
     if (state.players) {
       state.players.forEach((player) => {
         const cities = state.cities ? state.cities.filter((c) => c.owner === player.id).length : 0;
@@ -674,14 +801,9 @@ const App = {
             ? state.map.tiles.filter((t) => t.owner === player.id).length
             : 0;
 
-        // Only update name if we don't have one stored yet (from PLAYER_JOINED)
-        // This prevents old replay states from overwriting the current player names
-        if (!this.playerNames[player.id] && player.name) {
-          this.playerNames[player.id] = player.name;
-          Panels.updatePlayerInfo(player.id, {
-            name: player.name,
-            connected: true,
-          });
+        // Always show names from the displayed state (live or replay)
+        if (player.name) {
+          Panels.updatePlayerInfo(player.id, { name: player.name });
         }
 
         Panels.updatePlayerStats(player.id, {
@@ -696,11 +818,12 @@ const App = {
     }
 
     // Update turn info
-    // Get monument owner name from stored playerNames
+    // Get monument owner name from the displayed state
     const monumentOwnerId = state.monument ? state.monument.controlled_by : null;
     let monumentOwnerName = null;
-    if (monumentOwnerId !== null) {
-      monumentOwnerName = this.playerNames[monumentOwnerId] || `Player ${monumentOwnerId + 1}`;
+    if (monumentOwnerId !== null && state.players) {
+      const monumentPlayer = state.players.find((p) => p.id === monumentOwnerId);
+      monumentOwnerName = monumentPlayer?.name || `Player ${monumentOwnerId + 1}`;
     }
 
     Panels.updateTurnInfo({
@@ -888,242 +1011,382 @@ const App = {
 };
 
 /**
- * Replay controls for turn history navigation
+ * Replay — game-list architecture with global timeline slider.
+ *
+ * games[] stores an array of state-arrays, one per game played this session.
+ * The global slider treats all states across all games as one flat timeline.
+ * Red dots on the slider mark game boundaries.
  */
 const Replay = {
-  // Replay state
-  history: [], // Array of game states for each turn
-  maxHistory: 5000, // Maximum states to keep
-  currentIndex: 0, // Current position in history
-  isPlaying: false, // Auto-play state
-  playInterval: null, // Auto-play interval
-  speed: 1, // Playback speed multiplier
+  games: [], // [[state, state, ...], [...], ...]
+  currentGameIndex: -1, // which game is being viewed (0-based)
+  history: [], // points to games[currentGameIndex]
+  currentIndex: -1, // turn index within history
+  isPlaying: false,
+  playTimer: null,
+  speed: 4,
+  followLive: true,
 
-  /**
-   * Initialize replay with game state history
-   */
-  init(history) {
-    this.history = history || [];
-    this.currentIndex = this.history.length - 1;
+  init() {
+    this.games = [];
+    this.currentGameIndex = -1;
+    this.history = [];
+    this.currentIndex = -1;
+    this.followLive = true;
+    this.pause();
     this.updateUI();
   },
 
-  /**
-   * Add a new state to history (called when new turn arrives)
-   */
+  maxGames: 25,
+
+  resetLiveBuffer() {
+    // Prune oldest non-live games if at the limit
+    while (this.games.length >= this.maxGames) {
+      this.games.shift();
+      if (this.currentGameIndex > 0) this.currentGameIndex--;
+    }
+    this.games.push([]);
+    if (this.followLive) {
+      this.currentGameIndex = this.games.length - 1;
+      this.history = this.games[this.currentGameIndex];
+      this.currentIndex = -1;
+      this.pause();
+    }
+    this.updateUI();
+  },
+
   addState(state) {
-    this.history.push(JSON.parse(JSON.stringify(state)));
+    if (!state || state.turn === undefined) return;
+    if (this.games.length === 0) this.games.push([]);
 
-    // Limit history size
-    if (this.history.length > this.maxHistory) {
-      this.history.shift();
-      // Adjust currentIndex since we removed from the beginning
-      if (this.currentIndex > 0) {
-        this.currentIndex--;
-      }
-    }
+    const liveGame = this.games[this.games.length - 1];
+    const last = liveGame[liveGame.length - 1];
+    if (last && last.turn === state.turn) return;
 
-    // If we're at the end, stay at the end
-    if (this.currentIndex === this.history.length - 2) {
+    liveGame.push(JSON.parse(JSON.stringify(state)));
+
+    if (this.followLive) {
+      this.currentGameIndex = this.games.length - 1;
+      this.history = this.games[this.currentGameIndex];
       this.currentIndex = this.history.length - 1;
+    } else if (this.isPlaying && !this.playTimer) {
+      // Was waiting at global end for new states — resume playback
+      this.scheduleNextFrame();
     }
-
     this.updateUI();
   },
 
-  /**
-   * Check if currently viewing the latest (live) state
-   */
   isViewingLive() {
-    return this.history.length === 0 || this.currentIndex >= this.history.length - 1;
+    return this.followLive;
   },
 
-  /**
-   * Go to specific turn
-   */
-  seekTo(index) {
-    index = parseInt(index);
-    if (index >= 0 && index < this.history.length) {
-      this.currentIndex = index;
-      this.showState(this.history[index]);
+  // --- Global timeline helpers ---
+
+  getTotalStates() {
+    let n = 0;
+    for (const g of this.games) n += g.length;
+    return n;
+  },
+
+  getGlobalIndex() {
+    let idx = 0;
+    for (let i = 0; i < this.currentGameIndex; i++) idx += this.games[i].length;
+    return idx + Math.max(0, this.currentIndex);
+  },
+
+  /** Seek to a flat position across all games. */
+  seekGlobal(flat) {
+    flat = parseInt(flat);
+    if (flat < 0) return;
+    let remaining = flat;
+    for (let i = 0; i < this.games.length; i++) {
+      if (remaining < this.games[i].length) {
+        this.pause();
+        this.currentGameIndex = i;
+        this.history = this.games[i];
+        this.currentIndex = remaining;
+        this.followLive = false;
+        if (this.history[this.currentIndex]) {
+          this.showState(this.history[this.currentIndex]);
+        }
+        this.updateUI();
+        return;
+      }
+      remaining -= this.games[i].length;
+    }
+  },
+
+  /** Returns flat indices of the last state of each game (except the last game). */
+  getGameBoundaries() {
+    const out = [];
+    let offset = 0;
+    for (let i = 0; i < this.games.length - 1; i++) {
+      offset += this.games[i].length;
+      if (offset > 0) out.push(offset - 1);
+    }
+    return out;
+  },
+
+  // --- Game navigation ---
+
+  goToGame(num) {
+    num = parseInt(num);
+    if (isNaN(num) || num < 1 || num > this.games.length) return;
+    this.pause();
+    this.currentGameIndex = num - 1;
+    this.history = this.games[this.currentGameIndex];
+    this.currentIndex = 0;
+    this.followLive = false;
+    if (this.history.length > 0) this.showState(this.history[0]);
+    this.updateUI();
+  },
+
+  prevGame() {
+    if (this.currentGameIndex > 0) this.goToGame(this.currentGameIndex);
+  },
+
+  nextGame() {
+    if (this.currentGameIndex < this.games.length - 1) this.goToGame(this.currentGameIndex + 2);
+  },
+
+  // --- Turn navigation (within current game) ---
+
+  prevTurn() {
+    if (this.currentIndex > 0) {
+      this.currentIndex--;
+      this.followLive = false;
+      this.showState(this.history[this.currentIndex]);
+      this.updatePlayButton();
       this.updateUI();
     }
   },
 
-  /**
-   * Go to start (turn 0)
-   */
-  goToStart() {
-    this.pause();
-    this.seekTo(0);
-  },
-
-  /**
-   * Go to end (latest turn)
-   */
-  goToEnd() {
-    this.pause();
-    this.seekTo(this.history.length - 1);
-  },
-
-  /**
-   * Go to previous turn
-   */
-  prevTurn() {
-    this.pause();
-    if (this.currentIndex > 0) {
-      this.seekTo(this.currentIndex - 1);
-    }
-  },
-
-  /**
-   * Go to next turn
-   */
   nextTurn() {
     if (this.currentIndex < this.history.length - 1) {
-      this.seekTo(this.currentIndex + 1);
-    } else {
-      this.pause();
+      this.currentIndex++;
+      this.followLive = false;
+      this.showState(this.history[this.currentIndex]);
+      this.updatePlayButton();
+      this.updateUI();
     }
   },
 
-  /**
-   * Toggle play/pause
-   */
+  seekTurn(turnNum) {
+    turnNum = parseInt(turnNum);
+    if (isNaN(turnNum)) return;
+    const idx = this.history.findIndex((s) => s.turn === turnNum);
+    if (idx >= 0) {
+      this.pause();
+      this.currentIndex = idx;
+      this.followLive = false;
+      this.showState(this.history[idx]);
+      this.updateUI();
+    }
+  },
+
+  goToLive() {
+    this.pause();
+    this.followLive = true;
+    if (this.games.length > 0) {
+      this.currentGameIndex = this.games.length - 1;
+      this.history = this.games[this.currentGameIndex];
+      this.currentIndex = this.history.length > 0 ? this.history.length - 1 : -1;
+      if (this.currentIndex >= 0) this.showState(this.history[this.currentIndex]);
+    }
+    this.updatePlayButton();
+    this.updateUI();
+  },
+
+  // --- Playback ---
+
   togglePlay() {
-    if (this.isPlaying) {
-      this.pause();
-    } else {
-      this.play();
+    if (this.followLive) {
+      // Exit live mode → pause at current position
+      this.followLive = false;
+      this.updatePlayButton();
+      this.updateUI();
+      return;
     }
+    this.isPlaying ? this.pause() : this.play();
   },
 
-  /**
-   * Start auto-play
-   */
   play() {
-    if (this.currentIndex >= this.history.length - 1) {
-      // If at end, restart from beginning
+    const total = this.getTotalStates();
+    if (total < 2) return;
+    // If at global end, rewind to start
+    if (this.getGlobalIndex() >= total - 1) {
+      this.currentGameIndex = 0;
+      this.history = this.games[0];
       this.currentIndex = 0;
+      if (this.history.length > 0) this.showState(this.history[0]);
     }
-
+    this.followLive = false;
     this.isPlaying = true;
     this.updatePlayButton();
-
-    const interval = 1000 / this.speed;
-    this.playInterval = setInterval(() => {
-      this.nextTurn();
-    }, interval);
+    this.scheduleNextFrame();
   },
 
-  /**
-   * Pause auto-play
-   */
+  scheduleNextFrame() {
+    if (this.playTimer) clearTimeout(this.playTimer);
+    if (!this.isPlaying) return;
+    this.playTimer = setTimeout(() => {
+      if (this.currentIndex < this.history.length - 1) {
+        this.currentIndex++;
+      } else if (this.currentGameIndex < this.games.length - 1) {
+        this.currentGameIndex++;
+        this.history = this.games[this.currentGameIndex];
+        this.currentIndex = 0;
+      } else {
+        // At global end — stay playing, wait for new states
+        // addState() will call scheduleNextFrame() when data arrives
+        this.playTimer = null;
+        return;
+      }
+      this.showState(this.history[this.currentIndex]);
+      this.updateUI();
+      if (this.isPlaying) this.scheduleNextFrame();
+    }, 1000 / this.speed);
+  },
+
   pause() {
     this.isPlaying = false;
+    if (this.playTimer) {
+      clearTimeout(this.playTimer);
+      this.playTimer = null;
+    }
     this.updatePlayButton();
-
-    if (this.playInterval) {
-      clearInterval(this.playInterval);
-      this.playInterval = null;
-    }
   },
 
-  /**
-   * Set playback speed
-   */
   setSpeed(speed) {
-    this.speed = parseFloat(speed);
-    if (this.isPlaying) {
-      this.pause();
-      this.play();
+    if (speed === 'live') {
+      this.goToLive();
+      return;
     }
+    this.speed = parseFloat(speed) || 4;
+    this.followLive = false;
+    this.isPlaying = true;
+    this.updatePlayButton();
+    this.scheduleNextFrame();
   },
 
-  /**
-   * Show a specific state in the renderer
-   */
   showState(state) {
     if (state) {
+      App.gameState = state;
       Renderer.setGameState(state);
       App.updateUI();
     }
   },
 
-  /**
-   * Update UI elements
-   */
+  loadHistory(states, saveId, label) {
+    this.pause();
+    // Insert before the current live game (last entry) so live game stays last
+    const insertIdx = this.games.length > 0 ? this.games.length - 1 : 0;
+    const saved = states.map((s) => JSON.parse(JSON.stringify(s)));
+    this.games.splice(insertIdx, 0, saved);
+    this.currentGameIndex = insertIdx;
+    this.history = this.games[this.currentGameIndex];
+    this.currentIndex = 0;
+    this.followLive = false;
+    if (this.history.length > 0) this.showState(this.history[0]);
+    this.updatePlayButton();
+    this.updateUI();
+  },
+
+  // --- UI ---
+
   updateUI() {
-    const slider = document.getElementById('replay-slider');
-    const currentLabel = document.getElementById('replay-turn-current');
-    const maxLabel = document.getElementById('replay-turn-max');
-    const statusDot = document.getElementById('game-status-dot');
-    const statusText = document.getElementById('game-status-text');
+    const gameInput = document.getElementById('game-number-input');
+    const gameTotal = document.getElementById('game-total');
+    const goLiveBtn = document.getElementById('btn-go-live');
+    const slider = document.getElementById('global-slider');
+    const dotsContainer = document.getElementById('global-slider-dots');
 
+    // Game counter
+    if (gameInput) {
+      gameInput.value = this.games.length > 0 ? this.currentGameIndex + 1 : 0;
+      gameInput.max = this.games.length;
+    }
+    if (gameTotal) gameTotal.textContent = this.games.length;
+    if (goLiveBtn) goLiveBtn.classList.toggle('hidden', this.followLive);
+
+    // Global slider
+    const total = this.getTotalStates();
     if (slider) {
-      slider.max = Math.max(0, this.history.length - 1);
-      slider.value = this.currentIndex;
+      slider.max = Math.max(0, total - 1);
+      slider.value = total > 0 ? this.getGlobalIndex() : 0;
     }
 
-    // Both labels show absolute position / total
-    if (currentLabel) {
-      currentLabel.textContent = this.history.length > 0 ? this.currentIndex + 1 : 0;
-    }
-
-    if (maxLabel) {
-      maxLabel.textContent = this.history.length;
-    }
-
-    // Update game status
-    const isLive = this.currentIndex === this.history.length - 1;
-    const latestState = this.history[this.history.length - 1];
-    const isGameOver = latestState && latestState.gameOver;
-
-    if (statusDot) {
-      statusDot.classList.remove('live', 'ended', 'paused');
-      if (isGameOver) {
-        statusDot.classList.add('ended');
-      } else if (isLive) {
-        statusDot.classList.add('live');
+    // Game-boundary dots
+    if (dotsContainer) {
+      if (total > 1) {
+        const boundaries = this.getGameBoundaries();
+        dotsContainer.innerHTML = boundaries
+          .map((idx) => {
+            const pct = (idx / (total - 1)) * 100;
+            return `<span class="slider-game-dot" style="left:${pct}%"></span>`;
+          })
+          .join('');
       } else {
-        statusDot.classList.add('paused');
+        dotsContainer.innerHTML = '';
       }
     }
 
-    if (statusText) {
-      if (isGameOver) {
-        statusText.textContent = 'Ended';
-      } else if (isLive) {
-        statusText.textContent = 'Live';
-      } else {
-        statusText.textContent = 'Viewing';
+    // Turn navigation in top bar
+    const turnPrev = document.getElementById('turn-prev');
+    const turnNext = document.getElementById('turn-next');
+    const turnInput = document.getElementById('turn-input');
+    const turnCurrent = document.getElementById('turn-current');
+
+    if (this.followLive) {
+      // Live mode: hide nav arrows and input, show static text
+      if (turnPrev) turnPrev.classList.add('hidden');
+      if (turnNext) turnNext.classList.add('hidden');
+      if (turnInput) turnInput.classList.add('hidden');
+      if (turnCurrent) turnCurrent.classList.remove('hidden');
+    } else {
+      // Replay mode: show nav arrows and editable input, hide static text
+      if (turnPrev) turnPrev.classList.remove('hidden');
+      if (turnNext) turnNext.classList.remove('hidden');
+      if (turnInput) {
+        turnInput.classList.remove('hidden');
+        const state = this.history[this.currentIndex];
+        if (state) turnInput.value = state.turn;
       }
+      if (turnCurrent) turnCurrent.classList.add('hidden');
     }
   },
 
-  /**
-   * Update play button icon
-   */
   updatePlayButton() {
-    const icon = document.getElementById('replay-play-icon');
-    if (icon && typeof lucide !== 'undefined') {
-      icon.setAttribute('data-lucide', this.isPlaying ? 'pause' : 'play');
-      lucide.createIcons();
+    const btn = document.getElementById('btn-play');
+    const label = document.getElementById('play-btn-label');
+    if (!label) return;
+
+    if (this.followLive) {
+      label.textContent = '\u25B6 Live';
+      if (btn) btn.classList.add('play-btn-live');
+    } else {
+      label.textContent = (this.isPlaying ? '\u23F8' : '\u25B6') + ' ' + this.speed + 'x';
+      if (btn) btn.classList.remove('play-btn-live');
     }
+
+    // Highlight active speed in popup
+    document.querySelectorAll('.speed-option').forEach((el) => {
+      if (el.classList.contains('speed-option-live')) {
+        el.classList.toggle('active', this.followLive);
+      } else {
+        el.classList.toggle(
+          'active',
+          !this.followLive && parseFloat(el.textContent) === this.speed
+        );
+      }
+    });
   },
 };
 
 // Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   App.init();
-
-  // Initialize replay with empty history (will be populated when states arrive)
-  Replay.init([]);
-
-  // For demo, add the mock state to replay history
-  if (App.gameState) {
-    Replay.addState(App.gameState);
-  }
+  Replay.init();
 });
 
 // Export for module use

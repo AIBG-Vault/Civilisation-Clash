@@ -7,5 +7,7 @@
     "format": "cd server && npm run format",
     "format:check": "cd server && npm run format:check"
   },
-  "devDependencies": {}
+  "dependencies": {
+    "ws": "^8.19.0"
+  }
 }

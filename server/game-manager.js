@@ -1,5 +1,7 @@
 // Game Manager - Owns game state and handles turn processing
 
+const fs = require('fs');
+const path = require('path');
 const { createInitialState, processTurn, validateAction, MODES } = require('../logic');
 
 const GAME_STATES = {
@@ -11,7 +13,7 @@ const GAME_STATES = {
 const DEFAULT_SETTINGS = {
   mode: MODES.BLITZ,
   turnTimeout: 2000,
-  clientOverride: false,
+  clientOverride: true,
 };
 
 class GameManager {
@@ -20,10 +22,19 @@ class GameManager {
     this.settings = { ...DEFAULT_SETTINGS, ...options };
     this.state = null;
     this.gameState = GAME_STATES.WAITING;
+    this.paused = false;
     this.turnTimer = null;
     this.pendingActions = new Map();
     this.turnHistory = [];
+    this.stateHistory = []; // Full state snapshots for save/load
+    this.savesDir = path.join(__dirname, 'saves');
     this.onGameEvent = null;
+    this.maxSaves = options.maxSaves || 20; // keep last N save files
+
+    // Ensure saves directory exists
+    if (!fs.existsSync(this.savesDir)) {
+      fs.mkdirSync(this.savesDir, { recursive: true });
+    }
   }
 
   setEventCallback(callback) {
@@ -74,17 +85,19 @@ class GameManager {
     this.gameState = GAME_STATES.WAITING;
     this.pendingActions.clear();
     this.turnHistory = [];
+    this.stateHistory = [];
 
     this.emit('game_reset', {});
 
-    // Auto-start if both teams still connected
-    if (this.connectionManager.bothTeamsConnected()) {
+    // Auto-start if not paused and both teams still connected
+    if (!this.paused && this.connectionManager.bothTeamsConnected()) {
       this.startGame();
     }
   }
 
   checkAndStartGame() {
-    console.log(`[GameManager] checkAndStartGame - state: ${this.gameState}, bothTeams: ${this.connectionManager.bothTeamsConnected()}`);
+    console.log(`[GameManager] checkAndStartGame - state: ${this.gameState}, paused: ${this.paused}, bothTeams: ${this.connectionManager.bothTeamsConnected()}`);
+    if (this.paused) return false;
     if (this.gameState !== GAME_STATES.WAITING) return false;
     if (!this.connectionManager.bothTeamsConnected()) return false;
 
@@ -100,6 +113,7 @@ class GameManager {
     this.gameState = GAME_STATES.PLAYING;
     this.pendingActions.clear();
     this.turnHistory = [];
+    this.stateHistory = [this.getClientState()]; // Record initial state
 
     this.emit('game_started', {
       mode: this.settings.mode,
@@ -192,10 +206,13 @@ class GameManager {
       events: result.info.turnEvents,
     });
 
+    const clientState = this.getClientState();
+    this.stateHistory.push(clientState);
+
     this.emit('turn_processed', {
       turn: turnNumber,
       events: result.info.turnEvents,
-      state: this.getClientState(),
+      state: clientState,
     });
 
     if (this.state.gameOver) {
@@ -213,21 +230,136 @@ class GameManager {
       this.turnTimer = null;
     }
 
+    // Auto-save the game
+    const saveId = this.saveGame();
+
     this.emit('game_ended', {
       winner: this.state.winner,
       reason: this.state.winReason,
       finalState: this.getClientState(),
       history: this.turnHistory,
+      saveId,
     });
 
-    // Auto-restart after a short delay if both teams still connected
+    // Auto-restart after a short delay if not paused and both teams still connected
     setTimeout(() => {
-      if (this.connectionManager.bothTeamsConnected()) {
+      if (!this.paused && this.connectionManager.bothTeamsConnected()) {
         console.log('[GameManager] Auto-restarting game...');
         this.reset();
         this.checkAndStartGame();
       }
     }, 3000);
+  }
+
+  /**
+   * Save current game to a JSON file. Returns the save ID.
+   */
+  saveGame() {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const p0 = this.connectionManager.getPlayerByTeam(0);
+    const p1 = this.connectionManager.getPlayerByTeam(1);
+    const p0Name = p0?.name || 'Unknown';
+    const p1Name = p1?.name || 'Unknown';
+    const saveId = `${timestamp}_${p0Name}-vs-${p1Name}`;
+    const filename = `${saveId}.json`;
+
+    const saveData = {
+      id: saveId,
+      timestamp: new Date().toISOString(),
+      mode: this.settings.mode,
+      players: [
+        { id: 0, name: p0Name },
+        { id: 1, name: p1Name },
+      ],
+      winner: this.state?.winner ?? null,
+      winReason: this.state?.winReason ?? null,
+      finalTurn: this.state?.turn ?? 0,
+      maxTurns: this.state?.maxTurns ?? 0,
+      states: this.stateHistory,
+    };
+
+    try {
+      const filePath = path.join(this.savesDir, filename);
+      fs.writeFileSync(filePath, JSON.stringify(saveData));
+      console.log(`[GameManager] Game saved: ${filename}`);
+      this.pruneOldSaves();
+      return saveId;
+    } catch (err) {
+      console.error(`[GameManager] Failed to save game: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Delete oldest saves if over the maxSaves limit
+   */
+  pruneOldSaves() {
+    try {
+      const files = fs.readdirSync(this.savesDir)
+        .filter((f) => f.endsWith('.json'))
+        .sort(); // ISO timestamps sort chronologically
+      const toDelete = files.length - this.maxSaves;
+      for (let i = 0; i < toDelete; i++) {
+        fs.unlinkSync(path.join(this.savesDir, files[i]));
+        console.log(`[GameManager] Pruned old save: ${files[i]}`);
+      }
+    } catch (err) {
+      console.error(`[GameManager] Failed to prune saves: ${err.message}`);
+    }
+  }
+
+  /**
+   * List saved games (metadata only, no full states)
+   */
+  listSaves() {
+    try {
+      const files = fs.readdirSync(this.savesDir).filter((f) => f.endsWith('.json'));
+      return files.map((f) => {
+        try {
+          const raw = fs.readFileSync(path.join(this.savesDir, f), 'utf8');
+          const data = JSON.parse(raw);
+          return {
+            id: data.id,
+            filename: f,
+            timestamp: data.timestamp,
+            mode: data.mode,
+            players: data.players,
+            winner: data.winner,
+            winReason: data.winReason,
+            finalTurn: data.finalTurn,
+            maxTurns: data.maxTurns,
+          };
+        } catch {
+          return { filename: f, error: 'Failed to read' };
+        }
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Load a saved game's state history by ID
+   */
+  loadSave(saveId) {
+    try {
+      const files = fs.readdirSync(this.savesDir).filter((f) => f.endsWith('.json'));
+      const file = files.find((f) => f.includes(saveId));
+      if (!file) return { success: false, reason: 'Save not found' };
+
+      const raw = fs.readFileSync(path.join(this.savesDir, file), 'utf8');
+      const data = JSON.parse(raw);
+      return {
+        success: true,
+        id: data.id,
+        players: data.players,
+        winner: data.winner,
+        winReason: data.winReason,
+        states: data.states,
+      };
+    } catch (err) {
+      return { success: false, reason: err.message };
+    }
   }
 
   getClientState() {
@@ -264,6 +396,7 @@ class GameManager {
   getStatus() {
     return {
       gameState: this.gameState,
+      paused: this.paused,
       settings: this.settings,
       currentTurn: this.state?.turn ?? null,
       players: this.connectionManager.getConnectedClients(),
@@ -272,6 +405,30 @@ class GameManager {
         team1: this.pendingActions.has(1),
       },
     };
+  }
+
+  pause() {
+    this.paused = true;
+    // Stop current game regardless of state (PLAYING or FINISHED)
+    if (this.turnTimer) {
+      clearTimeout(this.turnTimer);
+      this.turnTimer = null;
+    }
+    if (this.gameState !== GAME_STATES.WAITING) {
+      this.state = null;
+      this.gameState = GAME_STATES.WAITING;
+      this.pendingActions.clear();
+      this.turnHistory = [];
+      this.stateHistory = [];
+      this.emit('game_reset', {});
+    }
+    return { success: true, paused: true };
+  }
+
+  resume() {
+    this.paused = false;
+    this.checkAndStartGame();
+    return { success: true, paused: false };
   }
 
   reset() {
@@ -284,6 +441,7 @@ class GameManager {
     this.gameState = GAME_STATES.WAITING;
     this.pendingActions.clear();
     this.turnHistory = [];
+    this.stateHistory = [];
 
     this.emit('game_reset', {});
   }
