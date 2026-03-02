@@ -26,6 +26,7 @@ class ConnectionManager {
       authenticated: false,
       teamId: null,
       isSpectator: false,
+      isOversight: false,
       name: null,
       authTimer: null,
     };
@@ -76,8 +77,15 @@ class ConnectionManager {
 
     let teamId = null;
     let isSpectator = false;
+    let isOversight = false;
 
-    if (this.protectedMode) {
+    // Check oversight password first (works in both modes)
+    const oversightPass = this.passwords.oversight;
+    if (oversightPass && password === oversightPass) {
+      teamId = -1;
+      isSpectator = true;
+      isOversight = true;
+    } else if (this.protectedMode) {
       // Protected mode: password determines the team
       // Look up which team this password belongs to
       let matched = false;
@@ -92,7 +100,7 @@ class ConnectionManager {
       // Check team passwords (keys "0", "1", etc.)
       if (!matched) {
         for (const [key, pass] of Object.entries(this.passwords)) {
-          if (key === 'spectator') continue;
+          if (key === 'spectator' || key === 'oversight') continue;
           if (password === pass) {
             teamId = parseInt(key);
             matched = true;
@@ -153,10 +161,11 @@ class ConnectionManager {
     info.authenticated = true;
     info.teamId = teamId;
     info.isSpectator = isSpectator;
+    info.isOversight = isOversight;
     info.name = assignedName;
 
     // IMPORTANT: Never include the password in the return value
-    return { success: true, teamId, assignedName, isSpectator };
+    return { success: true, teamId, assignedName, isSpectator, isOversight };
   }
 
   isTeamTaken(teamId) {
@@ -250,6 +259,24 @@ class ConnectionManager {
         ws.send(data);
       }
     }
+  }
+
+  getOversightClient() {
+    for (const [ws, info] of this.connections) {
+      if (info.authenticated && info.isOversight && ws.readyState === ws.OPEN) {
+        return { ws, ...info };
+      }
+    }
+    return null;
+  }
+
+  sendToOversight(message) {
+    const client = this.getOversightClient();
+    if (client) {
+      this.send(client.ws, message);
+      return true;
+    }
+    return false;
   }
 }
 

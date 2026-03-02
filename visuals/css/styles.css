@@ -6,9 +6,9 @@
   --team-0-light: #4da3ff;
   --team-0-bg: rgba(0, 113, 227, 0.15);
 
-  --team-1: #dc2626;
-  --team-1-light: #f87171;
-  --team-1-bg: rgba(220, 38, 38, 0.15);
+  --team-1: #ff9f0a;
+  --team-1-light: #ffbf4d;
+  --team-1-bg: rgba(255, 159, 10, 0.15);
 
   /* Terrain (spec: FIELD, MOUNTAIN, WATER, MONUMENT) */
   --field: #90b060;
@@ -344,6 +344,16 @@ body {
   background: rgba(255, 255, 255, 0.05);
 }
 
+select.input-field {
+  background-color: #1e293b;
+  color: #e2e8f0;
+}
+
+select.input-field option {
+  background-color: #1e293b;
+  color: #e2e8f0;
+}
+
 .input-field:focus {
   border-color: var(--team-0);
   box-shadow: 0 0 0 3px var(--team-0-bg);
@@ -503,6 +513,16 @@ body {
   animation: pulse 0.3s ease-in-out infinite;
 }
 
+.timer-paused {
+  color: var(--warning);
+  font-style: italic;
+}
+
+.timer-no-timeout {
+  color: var(--text-muted);
+  font-size: 1.2em;
+}
+
 /* Valid move/attack indicators on hover */
 .tile-valid-move {
   cursor: pointer;
@@ -606,13 +626,20 @@ body {
   z-index: 150;
 }
 
-.slide-panel-tab {
+/* Stacked tabs container */
+.slide-panel-tabs {
   position: absolute;
   right: 0;
   top: 50%;
   transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.slide-panel-tab {
   width: 32px;
-  height: 80px;
+  height: 48px;
   background: var(--card-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -633,6 +660,23 @@ body {
   width: 40px;
 }
 
+.slide-panel-tab.active {
+  background: var(--team-0);
+  color: white;
+  border-color: var(--team-0);
+}
+
+.slide-panel-tab.tab-oversight:hover {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.slide-panel-tab.tab-oversight.active {
+  background: #f59e0b;
+  color: white;
+  border-color: #f59e0b;
+}
+
 .slide-panel-content {
   position: absolute;
   right: 0;
@@ -649,7 +693,7 @@ body {
   overflow: hidden;
 }
 
-.slide-panel-right.open .slide-panel-tab {
+.slide-panel-right.open .slide-panel-tabs {
   opacity: 0;
   pointer-events: none;
 }
@@ -919,7 +963,7 @@ body:has(.slide-panel-right.open) #panel-inspector.visible {
 
 .action-queue-item .action-type {
   font-weight: 500;
-  color: var(--team-0);
+  color: var(--active-team-color, var(--team-0));
 }
 
 .action-queue-item .action-remove {
@@ -951,6 +995,217 @@ body:has(.slide-panel-right.open) #panel-inspector.visible {
 #panel-server .input-field {
   padding: 5px 8px;
   font-size: 12px;
+}
+
+/* ==========================================
+   Gameplay Drawer (Left Edge, hover-reveal)
+   ========================================== */
+
+#panel-gameplay-wrapper {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 120;
+  pointer-events: none;
+}
+
+#gameplay-hover-trigger {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  pointer-events: auto;
+}
+
+/* Visible indicator strip when gameplay panel is available */
+#panel-gameplay:not(.hidden) ~ #gameplay-hover-trigger,
+#gameplay-hover-trigger:has(~ #panel-gameplay:not(.hidden)) {
+  /* fallback: use wrapper-level styling instead */
+}
+
+#panel-gameplay-wrapper:has(#panel-gameplay:not(.hidden)) #gameplay-hover-trigger::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 72px;
+  border-radius: 0 4px 4px 0;
+  background: var(--indicator-color, var(--team-0));
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+  cursor: pointer;
+}
+
+#panel-gameplay-wrapper:has(#panel-gameplay.pinned) #gameplay-hover-trigger::after {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#panel-gameplay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 220px;
+  background: var(--card-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+  transform: translateX(-100%);
+  transition: transform 0.25s ease;
+  pointer-events: auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Click notch to open, click X to close */
+#panel-gameplay.pinned {
+  transform: translateX(0);
+}
+
+#panel-gameplay.hidden {
+  display: none;
+}
+
+/* Thin scrollbar for gameplay panel */
+#panel-gameplay,
+#gp-queue-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+#panel-gameplay::-webkit-scrollbar,
+#gp-queue-list::-webkit-scrollbar {
+  width: 4px;
+}
+#panel-gameplay::-webkit-scrollbar-track,
+#gp-queue-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+#panel-gameplay::-webkit-scrollbar-thumb,
+#gp-queue-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+
+.cmd-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.cmd-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme='dark'] .cmd-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cmd-btn.active {
+  background: var(--team-0);
+  color: white;
+  border-color: var(--team-0);
+}
+
+.cmd-btn.active:hover {
+  background: var(--team-0-light);
+}
+
+.cmd-btn-primary {
+  background: var(--team-0);
+  color: white !important;
+  border-color: var(--team-0);
+}
+
+.cmd-btn-primary:hover {
+  background: var(--team-0-light) !important;
+  border-color: var(--team-0-light);
+}
+
+/* ==========================================
+   Inline Build Popup
+   ========================================== */
+
+#inline-build-popup {
+  border-radius: 10px;
+  padding: 0;
+}
+
+.inline-build-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: var(--text);
+}
+
+.inline-build-card:hover {
+  border-color: var(--team-0);
+  background: var(--team-0-bg);
+}
+
+.inline-build-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+/* ==========================================
+   Oversight Controls (Side Panel)
+   ========================================== */
+
+.oversight-team-active {
+  background: var(--team-0) !important;
+  border-color: var(--team-0) !important;
+  color: white !important;
+}
+
+#oversight-team-1.oversight-team-active {
+  background: var(--team-1) !important;
+  border-color: var(--team-1) !important;
+}
+
+.team-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.team-badge.team-0 {
+  background: rgba(0, 113, 227, 0.2);
+  color: var(--team-0);
+}
+
+.team-badge.team-1 {
+  background: rgba(220, 38, 38, 0.2);
+  color: var(--team-1);
 }
 
 /* ==========================================

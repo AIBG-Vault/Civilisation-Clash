@@ -20,6 +20,8 @@ const Renderer = {
 
   // Interaction state
   isPanning: false,
+  isLeftDown: false,
+  lastDragTile: null, // tracks last tile during drag-expand
   lastMousePos: { x: 0, y: 0 },
   lastClickTime: 0,
   lastClickPos: { x: -1, y: -1 },
@@ -121,14 +123,17 @@ const Renderer = {
   onMouseDown(e) {
     const pos = this.getMousePos(e);
 
-    if (e.button === 2 || e.button === 1 || (e.button === 0 && e.shiftKey)) {
-      // Right click, middle mouse, or shift+left click = pan
+    if (e.button === 2 || e.button === 1) {
+      // Right click or middle mouse = pan
       this.isPanning = true;
       this.lastMousePos = pos;
       this.canvas.style.cursor = 'grabbing';
     } else if (e.button === 0) {
-      // Left click = select tile
+      // Left click = select tile (store shift state for multi-select)
+      this.pendingClickShift = e.shiftKey;
+      this.isLeftDown = true;
       const gridPos = Isometric.getGridCell(pos.x, pos.y);
+      this.lastDragTile = `${gridPos.x},${gridPos.y}`;
       this.handleTileClick(gridPos.x, gridPos.y);
     }
   },
@@ -150,6 +155,20 @@ const Renderer = {
       if (this.isValidTile(gridPos.x, gridPos.y)) {
         this.hoveredTile = gridPos;
         this.canvas.style.cursor = 'pointer';
+
+        // Drag-expand: if left button held in expand mode, expand tiles as we drag
+        if (
+          this.isLeftDown &&
+          typeof ManualPlay !== 'undefined' &&
+          ManualPlay.active &&
+          ManualPlay.mode === 'expand'
+        ) {
+          const tileKey = `${gridPos.x},${gridPos.y}`;
+          if (tileKey !== this.lastDragTile) {
+            this.lastDragTile = tileKey;
+            ManualPlay.queueExpand(gridPos.x, gridPos.y);
+          }
+        }
       } else {
         this.hoveredTile = null;
         this.canvas.style.cursor = 'default';
@@ -162,6 +181,8 @@ const Renderer = {
    */
   onMouseUp(e) {
     this.isPanning = false;
+    this.isLeftDown = false;
+    this.lastDragTile = null;
     this.canvas.style.cursor = 'default';
   },
 
@@ -170,6 +191,8 @@ const Renderer = {
    */
   onMouseLeave() {
     this.isPanning = false;
+    this.isLeftDown = false;
+    this.lastDragTile = null;
     this.hoveredTile = null;
     this.canvas.style.cursor = 'default';
   },
@@ -272,23 +295,12 @@ const Renderer = {
       this.selectedUnit = null;
     }
 
-    // Call App's handler for manual play
+    // Call App's handler for manual play (pass shift state for multi-select)
     if (typeof App !== 'undefined') {
-      App.handleTileClick(x, y, tile, unit, city);
+      App.handleTileClick(x, y, tile, unit, city, this.pendingClickShift || false);
     }
 
-    // Dispatch selection event for inspector panel
-    window.dispatchEvent(
-      new CustomEvent('tile-selected', {
-        detail: {
-          x,
-          y,
-          tile: tile,
-          unit: unit,
-          city: city,
-        },
-      })
-    );
+    // Inspector panel disabled — was too intrusive
   },
 
   /**
@@ -400,6 +412,12 @@ const Renderer = {
 
     // Draw selection/hover highlights
     this.drawInteractionHighlights(ctx);
+
+    // Draw manual play overlays (valid moves, arrows, path plans, etc.)
+    // In oversight mode, ManualPlay.getRenderOverlays includes both teams' actions
+    if (typeof ManualPlay !== 'undefined' && ManualPlay.active) {
+      this.drawManualPlayOverlays(ctx, time);
+    }
   },
 
   /**
@@ -541,6 +559,252 @@ const Renderer = {
    */
   toggleTerritoryBorders() {
     this.showTerritoryBorders = !this.showTerritoryBorders;
+  },
+
+  // --- Manual Play Overlay Drawing ---
+
+  drawManualPlayOverlays(ctx, time) {
+    const overlays = ManualPlay.getRenderOverlays(this.gameState);
+    if (!overlays) return;
+
+    // Valid move tiles (green)
+    if (overlays.validMoves && overlays.validMoves.length > 0) {
+      for (const tile of overlays.validMoves) {
+        this.drawTileOverlay(
+          ctx,
+          tile.x,
+          tile.y,
+          'rgba(52, 199, 89, 0.3)',
+          'rgba(52, 199, 89, 0.6)'
+        );
+      }
+    }
+
+    // Valid attack tiles (red)
+    if (overlays.validAttacks && overlays.validAttacks.length > 0) {
+      for (const tile of overlays.validAttacks) {
+        this.drawTileOverlay(
+          ctx,
+          tile.x,
+          tile.y,
+          'rgba(255, 59, 48, 0.3)',
+          'rgba(255, 59, 48, 0.6)'
+        );
+      }
+    }
+
+    // Expandable tiles (blue)
+    if (overlays.expandableTiles && overlays.expandableTiles.length > 0) {
+      for (const tile of overlays.expandableTiles) {
+        this.drawTileOverlay(
+          ctx,
+          tile.x,
+          tile.y,
+          'rgba(59, 130, 246, 0.25)',
+          'rgba(59, 130, 246, 0.5)'
+        );
+      }
+    }
+
+    // Valid city locations (gold)
+    if (overlays.validCityLocations && overlays.validCityLocations.length > 0) {
+      for (const tile of overlays.validCityLocations) {
+        this.drawTileOverlay(
+          ctx,
+          tile.x,
+          tile.y,
+          'rgba(255, 215, 0, 0.25)',
+          'rgba(255, 215, 0, 0.5)'
+        );
+      }
+    }
+
+    // Queued move arrows
+    if (overlays.queuedMoveArrows && overlays.queuedMoveArrows.length > 0) {
+      for (const arrow of overlays.queuedMoveArrows) {
+        this.drawMoveArrow(ctx, arrow);
+      }
+    }
+
+    // Build markers
+    if (overlays.queuedBuildMarkers && overlays.queuedBuildMarkers.length > 0) {
+      for (const marker of overlays.queuedBuildMarkers) {
+        this.drawBuildMarker(ctx, marker);
+      }
+    }
+
+    // Path plan lines
+    if (overlays.pathPlanLines && overlays.pathPlanLines.length > 0) {
+      for (const plan of overlays.pathPlanLines) {
+        this.drawPathPlanLine(ctx, plan, time);
+      }
+    }
+
+    // Selection glow for all selected units
+    if (overlays.selectedUnits && overlays.selectedUnits.length > 0) {
+      for (const unit of overlays.selectedUnits) {
+        this.drawSelectionGlow(ctx, unit);
+      }
+    }
+  },
+
+  drawTileOverlay(ctx, x, y, fillColor, strokeColor) {
+    const screen = Isometric.gridToScreen(x, y);
+    const tw = Isometric.tileWidth * Isometric.zoom;
+    const th = Isometric.tileHeight * Isometric.zoom;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(screen.x, screen.y - th / 2);
+    ctx.lineTo(screen.x + tw / 2, screen.y);
+    ctx.lineTo(screen.x, screen.y + th / 2);
+    ctx.lineTo(screen.x - tw / 2, screen.y);
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  },
+
+  drawMoveArrow(ctx, arrow) {
+    const from = Isometric.gridToScreen(arrow.fromX, arrow.fromY);
+    const to = Isometric.gridToScreen(arrow.toX, arrow.toY);
+    const teamColor = arrow.teamId === 0 ? '#0071e3' : '#dc2626';
+
+    ctx.save();
+    ctx.strokeStyle = teamColor;
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Arrowhead
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    const headLen = 10;
+    ctx.fillStyle = teamColor;
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(
+      to.x - headLen * Math.cos(angle - Math.PI / 6),
+      to.y - headLen * Math.sin(angle - Math.PI / 6)
+    );
+    ctx.lineTo(
+      to.x - headLen * Math.cos(angle + Math.PI / 6),
+      to.y - headLen * Math.sin(angle + Math.PI / 6)
+    );
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  },
+
+  drawBuildMarker(ctx, marker) {
+    const screen = Isometric.gridToScreen(marker.x, marker.y);
+    const teamColors = { 0: '#0071e3', 1: '#dc2626' };
+    const colors = {
+      BUILD_UNIT: (marker.teamId !== undefined ? teamColors[marker.teamId] : null) || '#0071e3',
+      BUILD_CITY: '#ffd700',
+      EXPAND_TERRITORY:
+        (marker.teamId !== undefined ? teamColors[marker.teamId] : null) || '#3b82f6',
+    };
+    const letters = {
+      BUILD_UNIT: marker.detail ? marker.detail[0] : 'U',
+      BUILD_CITY: 'C',
+      EXPAND_TERRITORY: 'E',
+    };
+
+    const color = colors[marker.type] || '#888';
+    const letter = letters[marker.type] || '?';
+    const r = 12;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y - 8, r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.85;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(letter, screen.x, screen.y - 8);
+    ctx.restore();
+  },
+
+  drawPathPlanLine(ctx, plan, time) {
+    if (!plan.points || plan.points.length < 2) return;
+    const teamColor = plan.teamId === 0 ? '#0071e3' : '#dc2626';
+
+    ctx.save();
+    ctx.strokeStyle = teamColor;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.6;
+
+    // Animated dash offset
+    const dashOffset = (time / 50) % 20;
+    ctx.setLineDash([8, 6]);
+    ctx.lineDashOffset = -dashOffset;
+
+    ctx.beginPath();
+    for (let i = 0; i < plan.points.length; i++) {
+      const p = Isometric.gridToScreen(plan.points[i].x, plan.points[i].y);
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Dots at each point
+    ctx.globalAlpha = 0.8;
+    for (let i = 0; i < plan.points.length; i++) {
+      const p = Isometric.gridToScreen(plan.points[i].x, plan.points[i].y);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = teamColor;
+      ctx.fill();
+    }
+
+    // Turn break circles
+    if (plan.turnBreaks) {
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 2;
+      for (const idx of plan.turnBreaks) {
+        if (idx >= 0 && idx < plan.points.length) {
+          const p = Isometric.gridToScreen(plan.points[idx].x, plan.points[idx].y);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+    }
+
+    ctx.restore();
+  },
+
+  drawSelectionGlow(ctx, unit) {
+    const screen = Isometric.gridToScreen(unit.x, unit.y);
+    const teamColor = unit.owner === 0 ? '#0071e3' : '#dc2626';
+
+    ctx.save();
+    ctx.strokeStyle = teamColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y - 6, 16, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
   },
 
   /**

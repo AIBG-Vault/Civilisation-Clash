@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -170,30 +170,19 @@
         </div>
       </div>
 
-      <!-- Controls Panel (Bottom Left) -->
-      <div id="panel-controls" class="panel absolute bottom-4 left-4">
-        <div class="flex items-center gap-1 p-2">
-          <button id="btn-terminal" class="control-btn" title="Terminal" onclick="toggleTerminal()">
-            <i data-lucide="terminal" class="w-5 h-5"></i>
-          </button>
-          <button
-            id="btn-replays"
-            class="control-btn"
-            title="Game Replays"
-            onclick="App.requestSavesList(); toggleModal('modal-replays')"
-          >
-            <i data-lucide="film" class="w-5 h-5"></i>
-          </button>
-          <button id="btn-theme" class="control-btn" title="Toggle Theme" onclick="toggleTheme()">
-            <i data-lucide="sun" class="w-5 h-5 dark:hidden"></i>
-            <i data-lucide="moon" class="w-5 h-5 hidden dark:block"></i>
-          </button>
-        </div>
-      </div>
-
       <!-- Replay Bar (Bottom Center) -->
       <div id="panel-replay" class="panel absolute bottom-4 left-1/2 -translate-x-1/2">
         <div class="flex items-center gap-3 px-4 py-2">
+          <!-- Saved replays -->
+          <button
+            id="btn-replays"
+            class="control-btn w-8 h-8"
+            title="Saved Replays"
+            onclick="App.requestSavesList(); toggleModal('modal-replays')"
+          >
+            <i data-lucide="film" class="w-4 h-4"></i>
+          </button>
+          <div class="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
           <!-- Game navigator -->
           <button class="control-btn w-8 h-8" title="Previous game" onclick="Replay.prevGame()">
             <i data-lucide="chevron-left" class="w-4 h-4"></i>
@@ -244,9 +233,9 @@
               </button>
               <button class="speed-option" onclick="Replay.setSpeed(0.5)">0.5x</button>
               <button class="speed-option" onclick="Replay.setSpeed(1)">1x</button>
-              <button class="speed-option" onclick="Replay.setSpeed(2)">2x</button>
               <button class="speed-option" onclick="Replay.setSpeed(4)">4x</button>
               <button class="speed-option" onclick="Replay.setSpeed(8)">8x</button>
+              <button class="speed-option" onclick="Replay.setSpeed(16)">16x</button>
             </div>
           </div>
 
@@ -262,124 +251,268 @@
         </div>
       </div>
 
-      <!-- Manual Play Panel (Right Edge - Hidden) -->
-      <div id="panel-manual" class="slide-panel-right">
-        <div class="slide-panel-tab" onclick="toggleManualPanel()">
-          <i data-lucide="gamepad-2" class="w-5 h-5"></i>
+      <!-- Gameplay Drawer (Left edge, revealed on hover when connected) -->
+      <div id="panel-gameplay-wrapper">
+        <div id="gameplay-hover-trigger" onclick="Panels.pinGameplayPanel()"></div>
+        <div id="panel-gameplay" class="hidden">
+          <!-- Compact header: team + gold + countdown + close -->
+          <div class="flex items-center gap-2 px-3 py-2 border-b border-slate-700">
+            <span id="gp-team-name" class="font-semibold text-xs text-team0">Blue</span>
+            <div class="flex items-center gap-1 text-xs" title="Projected gold">
+              <i data-lucide="coins" class="w-3 h-3 text-yellow-500"></i>
+              <span id="gp-gold" class="font-mono">0</span>
+            </div>
+            <span id="gp-countdown" class="text-xs font-mono text-slate-500 ml-auto"></span>
+            <button
+              class="p-0.5 hover:bg-white/10 rounded"
+              onclick="Panels.unpinGameplayPanel()"
+              title="Close"
+            >
+              <i data-lucide="x" class="w-3 h-3"></i>
+            </button>
+          </div>
+
+          <!-- Mode buttons -->
+          <div class="flex border-b border-slate-700">
+            <button
+              id="gp-select"
+              class="cmd-btn active flex-1 justify-center rounded-none"
+              title="Select (S)"
+              onclick="if(typeof ManualPlay!=='undefined') ManualPlay.setMode('select')"
+            >
+              <i data-lucide="mouse-pointer" class="w-3.5 h-3.5"></i>
+            </button>
+            <button
+              id="gp-expand"
+              class="cmd-btn flex-1 justify-center rounded-none"
+              title="Expand (E)"
+              onclick="if(typeof ManualPlay!=='undefined') ManualPlay.setMode('expand')"
+            >
+              <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>
+            </button>
+            <button
+              id="gp-city"
+              class="cmd-btn flex-1 justify-center rounded-none"
+              title="City (C)"
+              onclick="if(typeof ManualPlay!=='undefined') ManualPlay.setMode('build_city')"
+            >
+              <i data-lucide="landmark" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+
+          <!-- Queued actions (takes all remaining space) -->
+          <div class="flex-1 flex flex-col min-h-0 px-2 py-2">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-medium">Queued</span>
+              <span id="gp-action-count" class="text-xs text-slate-500">0</span>
+            </div>
+            <div id="gp-queue-list" class="flex-1 space-y-1 overflow-y-auto text-xs">
+              <div class="text-slate-500 italic text-xs">No actions queued</div>
+            </div>
+          </div>
+
+          <!-- Bottom: Clear / Submit -->
+          <div class="flex border-t border-slate-700">
+            <button
+              class="cmd-btn flex-1 justify-center rounded-none py-2"
+              onclick="if(typeof ManualPlay!=='undefined') ManualPlay.clearQueue()"
+            >
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+            <button
+              class="cmd-btn-primary cmd-btn flex-1 justify-center rounded-none py-2"
+              onclick="if(typeof ManualPlay!=='undefined') ManualPlay.submitActions()"
+            >
+              <i data-lucide="send" class="w-3.5 h-3.5"></i>
+              <span class="text-xs ml-1">Submit</span>
+            </button>
+          </div>
         </div>
+      </div>
+
+      <!-- Right Panel System (two tabs: Manual Play + Oversight) -->
+      <div id="right-panel" class="slide-panel-right">
+        <!-- Tabs (stacked vertically on right edge) -->
+        <div class="slide-panel-tabs">
+          <div
+            id="tab-manual"
+            class="slide-panel-tab"
+            onclick="Panels.openRightPanel('manual')"
+            title="Manual Play"
+          >
+            <i data-lucide="gamepad-2" class="w-5 h-5"></i>
+          </div>
+          <div
+            id="tab-oversight"
+            class="slide-panel-tab tab-oversight"
+            onclick="Panels.openRightPanel('oversight')"
+            title="Oversight"
+          >
+            <i data-lucide="eye" class="w-5 h-5"></i>
+          </div>
+        </div>
+
+        <!-- Drawer content -->
         <div class="slide-panel-content">
-          <div class="panel-header flex items-center justify-between px-3 py-2">
-            <span class="font-semibold">Manual Play</span>
-            <button
-              class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded"
-              onclick="toggleManualPanel()"
-            >
-              <i data-lucide="x" class="w-4 h-4"></i>
-            </button>
+          <!-- Manual Play content -->
+          <div id="panel-manual-content">
+            <div class="panel-header flex items-center justify-between px-3 py-2">
+              <span class="font-semibold">Manual Play</span>
+              <button
+                class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded"
+                onclick="Panels.closeRightPanel()"
+              >
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
+
+            <!-- Connection Section -->
+            <div id="manual-connect" class="px-3 pb-3 space-y-3">
+              <div class="text-sm text-slate-500 dark:text-slate-400">
+                Connect as a player to control a team manually.
+              </div>
+              <div>
+                <label class="block text-xs font-medium mb-1">Team</label>
+                <select id="manual-team" class="input-field w-full text-sm">
+                  <option value="0">Blue (Team 0)</option>
+                  <option value="1">Red (Team 1)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium mb-1">Password</label>
+                <input
+                  type="password"
+                  id="manual-password"
+                  class="input-field w-full text-sm"
+                  placeholder="Enter team password"
+                />
+              </div>
+              <button
+                id="btn-manual-connect"
+                class="action-btn primary w-full justify-center"
+                onclick="App.connectAsPlayer()"
+              >
+                <i data-lucide="plug" class="w-4 h-4"></i>
+                <span>Connect as Player</span>
+              </button>
+            </div>
+
+            <!-- Connected Section (shown when connected as player) -->
+            <div id="manual-actions" class="px-3 pb-3 space-y-3 hidden">
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-slate-500 dark:text-slate-400">Connected as</span>
+                <span id="manual-team-name" class="font-semibold text-team0">Blue</span>
+              </div>
+              <div class="text-xs text-slate-400 dark:text-slate-500">
+                Use the gameplay panel on the left to queue actions.
+              </div>
+              <button
+                class="action-btn w-full justify-center text-red-500 border-red-300"
+                onclick="App.disconnectPlayer()"
+              >
+                <i data-lucide="log-out" class="w-4 h-4"></i>
+                <span>Disconnect</span>
+              </button>
+            </div>
           </div>
 
-          <!-- Connection Section (shown when not connected as player) -->
-          <div id="manual-connect" class="px-3 pb-3 space-y-3">
-            <div class="text-sm text-slate-500 dark:text-slate-400">
-              Connect as a player to control a team manually.
-            </div>
-            <div>
-              <label class="block text-xs font-medium mb-1">Team</label>
-              <select id="manual-team" class="input-field w-full text-sm">
-                <option value="0">Blue (Team 0)</option>
-                <option value="1">Red (Team 1)</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs font-medium mb-1">Password</label>
-              <input
-                type="password"
-                id="manual-password"
-                class="input-field w-full text-sm"
-                placeholder="Enter team password"
-              />
-            </div>
-            <button
-              id="btn-manual-connect"
-              class="action-btn primary w-full justify-center"
-              onclick="App.connectAsPlayer()"
-            >
-              <i data-lucide="plug" class="w-4 h-4"></i>
-              <span>Connect as Player</span>
-            </button>
-          </div>
-
-          <!-- Action Section (shown when connected as player) -->
-          <div id="manual-actions" class="px-3 pb-3 space-y-3 hidden">
-            <div class="flex items-center justify-between text-sm">
-              <span class="text-slate-500 dark:text-slate-400">Playing as</span>
-              <span id="manual-team-name" class="font-semibold text-team0">Blue</span>
-            </div>
-
-            <div class="border-t border-slate-200 dark:border-slate-700 pt-3 space-y-2">
+          <!-- Oversight content -->
+          <div id="panel-oversight-content" class="hidden">
+            <div class="panel-header flex items-center justify-between px-3 py-2">
+              <span class="font-semibold">Oversight</span>
               <button
-                id="btn-build"
-                class="action-btn w-full justify-start"
-                onclick="toggleModal('modal-build')"
+                class="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded"
+                onclick="Panels.closeRightPanel()"
               >
-                <i data-lucide="hammer" class="w-4 h-4"></i>
-                <span>Build Unit</span>
-                <span class="ml-auto text-xs text-slate-400">B</span>
-              </button>
-              <button
-                id="btn-expand"
-                class="action-btn w-full justify-start"
-                onclick="App.startExpandMode()"
-              >
-                <i data-lucide="maximize-2" class="w-4 h-4"></i>
-                <span>Expand Territory</span>
-                <span class="ml-auto text-xs text-slate-400">E</span>
-              </button>
-              <button
-                id="btn-city"
-                class="action-btn w-full justify-start"
-                onclick="App.startCityMode()"
-              >
-                <i data-lucide="landmark" class="w-4 h-4"></i>
-                <span>Build City</span>
-                <span class="ml-auto text-xs text-slate-400">C</span>
+                <i data-lucide="x" class="w-4 h-4"></i>
               </button>
             </div>
 
-            <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
-              <div class="flex items-center justify-between mb-2">
-                <span class="text-sm font-medium">Queued Actions</span>
-                <span class="text-xs text-slate-500 dark:text-slate-400"
-                  ><span id="queued-count">0</span> actions</span
+            <!-- Oversight Connect Section -->
+            <div id="oversight-connect" class="px-3 pb-3 space-y-3">
+              <div class="text-sm text-slate-500 dark:text-slate-400">
+                Connect as oversight to review and modify bot actions.
+              </div>
+              <div>
+                <label class="block text-xs font-medium mb-1">Password</label>
+                <input
+                  type="password"
+                  id="oversight-password"
+                  class="input-field w-full text-sm"
+                  placeholder="Oversight password"
+                  value="oversight"
+                />
+              </div>
+              <button
+                class="action-btn primary w-full justify-center text-amber-600 dark:text-amber-400"
+                onclick="App.connectAsOversight()"
+              >
+                <i data-lucide="eye" class="w-4 h-4"></i>
+                <span>Connect as Oversight</span>
+              </button>
+            </div>
+
+            <!-- Oversight Controls (shown when connected) -->
+            <div id="oversight-controls" class="px-3 pb-3 space-y-3 hidden">
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-slate-500 dark:text-slate-400">Oversight Mode</span>
+                <span class="text-amber-500 font-semibold text-xs uppercase tracking-wider"
+                  >Active</span
                 >
               </div>
-              <div id="action-queue" class="space-y-1 max-h-32 overflow-y-auto text-xs">
-                <div class="text-slate-400 italic">No actions queued</div>
+
+              <!-- Team Toggle -->
+              <div class="flex gap-2">
+                <button
+                  id="oversight-team-0"
+                  class="action-btn flex-1 justify-center oversight-team-active"
+                  onclick="if(typeof ManualPlay!=='undefined') ManualPlay.switchTeam(0)"
+                >
+                  <span class="text-xs font-bold">Blue</span>
+                </button>
+                <button
+                  id="oversight-team-1"
+                  class="action-btn flex-1 justify-center"
+                  onclick="if(typeof ManualPlay!=='undefined') ManualPlay.switchTeam(1)"
+                >
+                  <span class="text-xs font-bold">Orange</span>
+                </button>
               </div>
-            </div>
 
-            <div class="flex gap-2">
-              <button class="action-btn flex-1 justify-center" onclick="App.clearActionQueue()">
-                <i data-lucide="trash-2" class="w-4 h-4"></i>
-                <span>Clear</span>
-              </button>
+              <!-- Auto-approve -->
+              <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-sm font-medium">Auto-approve</span>
+                  <span id="oversight-countdown" class="text-xs font-mono text-slate-500"></span>
+                </div>
+                <div class="flex gap-2">
+                  <button
+                    id="oversight-pause-btn"
+                    class="action-btn flex-1 justify-center"
+                    onclick="if(typeof Oversight!=='undefined') Oversight.togglePause()"
+                  >
+                    <i data-lucide="pause" class="w-4 h-4"></i>
+                    <span id="oversight-pause-label">Pause</span>
+                  </button>
+                  <button
+                    class="action-btn primary flex-1 justify-center"
+                    onclick="if(typeof Oversight!=='undefined') Oversight.approve()"
+                  >
+                    <i data-lucide="check" class="w-4 h-4"></i>
+                    <span>Approve</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Disconnect -->
               <button
-                id="btn-submit"
-                class="action-btn primary flex-1 justify-center"
-                onclick="App.submitActions()"
+                class="action-btn w-full justify-center text-red-500 border-red-300"
+                onclick="App.disconnectPlayer()"
               >
-                <i data-lucide="send" class="w-4 h-4"></i>
-                <span>Submit</span>
+                <i data-lucide="log-out" class="w-4 h-4"></i>
+                <span>Disconnect</span>
               </button>
             </div>
-
-            <button
-              class="action-btn w-full justify-center text-red-500 border-red-300"
-              onclick="App.disconnectPlayer()"
-            >
-              <i data-lucide="log-out" class="w-4 h-4"></i>
-              <span>Disconnect</span>
-            </button>
           </div>
         </div>
       </div>
@@ -464,6 +597,14 @@
             <span class="text-xs text-team0 font-medium">P1</span>
             <span id="p1-connection-dot" class="connection-dot"></span>
             <span class="text-xs text-team1 font-medium">P2</span>
+            <button
+              id="btn-terminal"
+              class="control-btn w-6 h-6 ml-auto"
+              title="Terminal (T)"
+              onclick="toggleTerminal()"
+            >
+              <i data-lucide="terminal" class="w-3 h-3"></i>
+            </button>
           </div>
           <!-- Actions row -->
           <div class="flex gap-2">
@@ -517,6 +658,36 @@
                 class="input-field w-full text-xs"
                 value="2000"
                 min="0"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-medium mb-1">Oversight Timeout (ms)</label>
+              <input
+                type="number"
+                id="setting-oversight-timeout"
+                class="input-field w-full text-xs"
+                value="30000"
+                min="1000"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-medium mb-1">Auto-Submit Buffer (ms)</label>
+              <input
+                type="number"
+                id="setting-autosubmit-buffer"
+                class="input-field w-full text-xs"
+                value="500"
+                min="0"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-medium mb-1">Oversight Auto-Approve (ms)</label>
+              <input
+                type="number"
+                id="setting-oversight-approve"
+                class="input-field w-full text-xs"
+                value="500"
+                min="100"
               />
             </div>
             <button
@@ -618,12 +789,45 @@
       </div>
     </div>
 
+    <!-- Inline Build Popup (positioned near clicked city) -->
+    <div id="inline-build-popup" class="panel absolute hidden" style="z-index: 200">
+      <div class="flex gap-2 p-2">
+        <button
+          class="inline-build-card"
+          onclick="if(typeof ManualPlay!=='undefined') ManualPlay.queueBuildUnit(null,null,'SOLDIER')"
+          title="Soldier (20g)"
+        >
+          <div class="inline-build-icon bg-blue-100 dark:bg-blue-900/30 text-team0">S</div>
+          <span class="text-xs">20g</span>
+        </button>
+        <button
+          class="inline-build-card"
+          onclick="if(typeof ManualPlay!=='undefined') ManualPlay.queueBuildUnit(null,null,'ARCHER')"
+          title="Archer (25g)"
+        >
+          <div class="inline-build-icon bg-blue-100 dark:bg-blue-900/30 text-team0">A</div>
+          <span class="text-xs">25g</span>
+        </button>
+        <button
+          class="inline-build-card"
+          onclick="if(typeof ManualPlay!=='undefined') ManualPlay.queueBuildUnit(null,null,'RAIDER')"
+          title="Raider (10g)"
+        >
+          <div class="inline-build-icon bg-blue-100 dark:bg-blue-900/30 text-team0">R</div>
+          <span class="text-xs">10g</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Scripts -->
     <script src="js/canvas/isometric.js"></script>
     <script src="js/canvas/tiles.js"></script>
     <script src="js/canvas/units.js"></script>
     <script src="js/canvas/renderer.js"></script>
     <script src="js/ui/panels.js"></script>
+    <script src="js/game/pathfinding.js"></script>
+    <script src="js/game/manual-play.js"></script>
+    <script src="js/game/oversight.js"></script>
     <script src="js/app.js"></script>
   </body>
 </html>

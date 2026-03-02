@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = {
   mode: MODES.BLITZ,
   turnTimeout: 2000,
   clientOverride: true,
+  oversightTimeoutMs: 30000,
 };
 
 class GameManager {
@@ -30,6 +31,7 @@ class GameManager {
     this.savesDir = path.join(__dirname, 'saves');
     this.onGameEvent = null;
     this.maxSaves = options.maxSaves || 20; // keep last N save files
+    this.oversightTimer = null; // Safety timeout for oversight review
 
     // Ensure saves directory exists
     if (!fs.existsSync(this.savesDir)) {
@@ -142,7 +144,11 @@ class GameManager {
   }
 
   onTurnTimeout() {
-    this.processPendingActions();
+    if (this.connectionManager.getOversightClient()) {
+      this.emitOversightReview();
+    } else {
+      this.processPendingActions();
+    }
   }
 
   submitActions(teamId, actions) {
@@ -174,7 +180,11 @@ class GameManager {
         clearTimeout(this.turnTimer);
         this.turnTimer = null;
       }
-      this.processPendingActions();
+      if (this.connectionManager.getOversightClient()) {
+        this.emitOversightReview();
+      } else {
+        this.processPendingActions();
+      }
     }
 
     return {
@@ -183,6 +193,32 @@ class GameManager {
       totalCount: actions.length,
       validation,
     };
+  }
+
+  emitOversightReview() {
+    const actions = {
+      team0: this.pendingActions.get(0) || [],
+      team1: this.pendingActions.get(1) || [],
+    };
+    this.emit('oversight_review', { turn: this.state.turn, actions });
+    // Safety timeout: if oversight client disconnects or hangs, auto-process
+    const timeoutMs = this.settings.oversightTimeoutMs || DEFAULT_SETTINGS.oversightTimeoutMs;
+    this.oversightTimer = setTimeout(() => {
+      console.log('[GameManager] Oversight timeout, auto-processing');
+      this.oversightTimer = null;
+      this.processPendingActions();
+    }, timeoutMs);
+  }
+
+  approveOversight(modifiedActions) {
+    if (!this.oversightTimer) return; // Not waiting for oversight
+    clearTimeout(this.oversightTimer);
+    this.oversightTimer = null;
+    if (modifiedActions) {
+      this.pendingActions.set(0, modifiedActions.team0 || []);
+      this.pendingActions.set(1, modifiedActions.team1 || []);
+    }
+    this.processPendingActions();
   }
 
   processPendingActions() {
@@ -435,6 +471,10 @@ class GameManager {
     if (this.turnTimer) {
       clearTimeout(this.turnTimer);
       this.turnTimer = null;
+    }
+    if (this.oversightTimer) {
+      clearTimeout(this.oversightTimer);
+      this.oversightTimer = null;
     }
 
     this.state = null;

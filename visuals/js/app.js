@@ -21,25 +21,15 @@ const App = {
     1: null,
   },
 
-  // Action queue (for manual play)
-  actionQueue: [],
-
   // Timer
   timerInterval: null,
   turnStartTime: null,
   turnTimeout: 2000,
 
-  // Manual play interaction mode
-  interactionMode: null, // null, 'move', 'expand', 'build_city'
-  selectedUnitForMove: null, // Unit selected for move action
-
   /**
    * Initialize the application
    */
   init() {
-    // Apply saved theme
-    Panels.applySavedTheme();
-
     // Initialize panels
     Panels.init();
 
@@ -235,6 +225,8 @@ const App = {
       case 'GAME_RESET':
         Panels.addTerminalMessage('Game reset - waiting for players', 'info');
         this.gameState = null;
+        this.stopTimer();
+        Panels.updateTimerDisplay('reset');
         // Don't blank the canvas here — keep the last frame visible
         // until the next game's first state arrives. This prevents the
         // visual flash/refresh between games.
@@ -260,7 +252,15 @@ const App = {
 
       case 'PAUSE_UPDATED':
         this.updatePauseButton(data.paused);
+        if (data.paused) {
+          this.stopTimer();
+          Panels.updateTimerDisplay('paused');
+        }
         Panels.addTerminalMessage(data.paused ? 'Server paused' : 'Server resumed', 'info');
+        break;
+
+      case 'OVERSIGHT_REVIEW':
+        this.handleOversightReview(data);
         break;
 
       case 'SAVES_LIST':
@@ -288,14 +288,24 @@ const App = {
     this.playerName = data.assignedName;
     this.isSpectator = data.isSpectator;
 
-    Panels.addTerminalMessage(
-      `Authenticated as: ${this.playerName} (${this.isSpectator ? 'Spectator' : `Team ${this.teamId}`})`,
-      'success'
-    );
+    const roleLabel = data.isOversight
+      ? 'Oversight'
+      : this.isSpectator
+        ? 'Spectator'
+        : `Team ${this.teamId}`;
+    Panels.addTerminalMessage(`Authenticated as: ${this.playerName} (${roleLabel})`, 'success');
 
-    // Update manual play panel based on role
-    if (!this.isSpectator) {
+    // Activate oversight if connected as oversight
+    if (data.isOversight) {
+      if (typeof Oversight !== 'undefined') Oversight.activate();
+      Panels.showOversightConnected();
+      // Command bar will appear when ManualPlay.activateOversight is called on first review
+    }
+    // Activate manual play if connected as player
+    else if (!this.isSpectator) {
+      if (typeof ManualPlay !== 'undefined') ManualPlay.activate(this.teamId);
       Panels.showManualConnected(this.teamId);
+      Panels.showGameplayPanel(this.teamId);
     }
 
     // Request current state and server status (for pause state)
@@ -338,16 +348,14 @@ const App = {
    * Disconnect from player mode
    */
   disconnectPlayer() {
+    if (typeof ManualPlay !== 'undefined') ManualPlay.deactivate();
+    if (typeof Oversight !== 'undefined') Oversight.deactivate();
     this.isSpectator = true;
     this.teamId = null;
-    this.interactionMode = null;
-    this.selectedUnitForMove = null;
-    this.clearActionQueue();
     Panels.showManualDisconnected();
-    Panels.addTerminalMessage(
-      'Disconnected from player mode, reconnecting as spectator...',
-      'info'
-    );
+    Panels.showOversightDisconnected();
+    Panels.hideGameplayPanel();
+    Panels.addTerminalMessage('Disconnected, reconnecting as spectator...', 'info');
 
     // Reconnect as spectator
     if (this.ws) {
@@ -357,182 +365,97 @@ const App = {
   },
 
   /**
-   * Start expand territory mode
+   * Connect as oversight client
    */
-  startExpandMode() {
-    this.interactionMode = 'expand';
-    this.selectedUnitForMove = null;
+  connectAsOversight() {
+    const passwordInput = document.getElementById('oversight-password');
+    const password = passwordInput ? passwordInput.value : 'oversight';
+
+    if (!password) {
+      Panels.addTerminalMessage('Oversight password required', 'warning');
+      return;
+    }
+
+    this.pendingPlayerAuth = {
+      password,
+      name: 'Oversight',
+    };
+
+    if (this.ws) {
+      this.reconnectAttempts = 0;
+      this.ws.close();
+    }
+
+    Panels.addTerminalMessage('Connecting as Oversight...', 'info');
+  },
+
+  /**
+   * Handle oversight review from server
+   */
+  handleOversightReview(data) {
+    if (typeof Oversight !== 'undefined' && Oversight.active) {
+      Oversight.handleReview(data);
+    }
     Panels.addTerminalMessage(
-      'Click a tile adjacent to your territory to expand (or double-click any time)',
+      `Turn ${data.turn}: Oversight review (${data.actions.team0.length}+${data.actions.team1.length} actions)`,
       'info'
     );
   },
 
-  /**
-   * Start build city mode
-   */
+  // --- Manual Play Delegators ---
+
+  startExpandMode() {
+    if (typeof ManualPlay !== 'undefined') ManualPlay.setMode('expand');
+  },
+
   startCityMode() {
-    this.interactionMode = 'build_city';
-    this.selectedUnitForMove = null;
-    Panels.addTerminalMessage('Click a tile in your territory to build a city (80 gold)', 'info');
+    if (typeof ManualPlay !== 'undefined') ManualPlay.setMode('build_city');
   },
 
-  /**
-   * Cancel current interaction mode
-   */
   cancelInteractionMode() {
-    this.interactionMode = null;
-    this.selectedUnitForMove = null;
-    Renderer.selectedUnit = null;
-    Panels.addTerminalMessage('Action cancelled', 'info');
+    if (typeof ManualPlay !== 'undefined') ManualPlay.setMode('select');
   },
 
-  /**
-   * Handle tile click from renderer (for manual play)
-   */
-  handleTileClick(x, y, tile, unit, city) {
-    // Only handle clicks if we're a player
-    if (this.isSpectator || this.teamId === null) return;
-
-    // Handle based on interaction mode
-    if (this.interactionMode === 'expand') {
-      this.queueExpand(x, y);
-      this.interactionMode = null;
+  handleTileClick(x, y, tile, unit, city, shiftKey) {
+    if (typeof ManualPlay !== 'undefined' && ManualPlay.active) {
+      ManualPlay.handleClick(x, y, tile, unit, city, shiftKey);
       return;
     }
-
-    if (this.interactionMode === 'build_city') {
-      this.queueBuildCity(x, y);
-      this.interactionMode = null;
-      return;
-    }
-
-    // If we have a unit selected for move, clicking a tile sets the destination
-    if (this.selectedUnitForMove) {
-      this.queueMove(this.selectedUnitForMove, x, y);
-      this.selectedUnitForMove = null;
-      Renderer.selectedUnit = null;
-      return;
-    }
-
-    // Clicking on our own unit - select it for move (check BEFORE city so units on cities can be selected)
-    if (unit && unit.owner === this.teamId) {
-      this.selectedUnitForMove = unit;
-      Renderer.selectedUnit = unit;
-      Panels.addTerminalMessage(
-        `Selected ${unit.type} at (${unit.x}, ${unit.y}) - click destination to move`,
-        'info'
-      );
-      return;
-    }
-
-    // Clicking on our own city (without a unit) - show build modal
-    if (city && city.owner === this.teamId) {
-      this.showBuildModalForCity(city);
-      return;
-    }
-
-    // Clicking elsewhere cancels selection
-    this.selectedUnitForMove = null;
   },
 
-  /**
-   * Handle double-click from renderer (for expand)
-   */
   handleTileDoubleClick(x, y, tile) {
-    if (this.isSpectator || this.teamId === null) return;
-    this.queueExpand(x, y);
+    if (typeof ManualPlay !== 'undefined' && ManualPlay.active) {
+      ManualPlay.handleDoubleClick(x, y, tile);
+      return;
+    }
   },
 
-  /**
-   * Queue an expand action
-   */
-  queueExpand(x, y) {
-    const action = {
-      action: 'EXPAND_TERRITORY',
-      x,
-      y,
-    };
-    this.queueAction(action);
+  confirmBuild() {
+    if (typeof ManualPlay !== 'undefined' && ManualPlay.active) {
+      const unitType = (Panels.selectedUnitType || 'soldier').toUpperCase();
+      const select = document.getElementById('build-city');
+      let city = this.selectedBuildCity;
+      if (!city && select && this.gameState) {
+        const myCities = this.gameState.cities.filter((c) => c.owner === this.teamId);
+        city = myCities[parseInt(select.value)];
+      }
+      if (city) {
+        ManualPlay.queueBuildUnit(city.x, city.y, unitType);
+        Panels.closeAllModals();
+      }
+      return;
+    }
   },
 
-  /**
-   * Queue a build city action
-   */
-  queueBuildCity(x, y) {
-    const action = {
-      action: 'BUILD_CITY',
-      x,
-      y,
-    };
-    this.queueAction(action);
-  },
-
-  /**
-   * Queue a move action
-   */
-  queueMove(unit, toX, toY) {
-    const action = {
-      action: 'MOVE',
-      from_x: unit.x,
-      from_y: unit.y,
-      to_x: toX,
-      to_y: toY,
-    };
-    this.queueAction(action);
-  },
-
-  /**
-   * Queue a build unit action
-   */
-  queueBuildUnit(cityX, cityY, unitType) {
-    const action = {
-      action: 'BUILD_UNIT',
-      city_x: cityX,
-      city_y: cityY,
-      unit_type: unitType.toUpperCase(),
-    };
-    this.queueAction(action);
-    Panels.closeAllModals();
-  },
-
-  /**
-   * Show build modal for a specific city
-   */
   showBuildModalForCity(city) {
-    // Update the city dropdown to select this city
     const select = document.getElementById('build-city');
     if (select && this.gameState) {
       const myCities = this.gameState.cities.filter((c) => c.owner === this.teamId);
       const cityIndex = myCities.findIndex((c) => c.x === city.x && c.y === city.y);
-      if (cityIndex >= 0) {
-        select.value = cityIndex;
-      }
+      if (cityIndex >= 0) select.value = cityIndex;
     }
-    // Store the city for the confirm button
     this.selectedBuildCity = city;
     toggleModal('modal-build');
-  },
-
-  /**
-   * Confirm build from modal
-   */
-  confirmBuild() {
-    const unitType = Panels.selectedUnitType || 'soldier';
-    const select = document.getElementById('build-city');
-
-    let city = this.selectedBuildCity;
-    if (!city && select && this.gameState) {
-      const myCities = this.gameState.cities.filter((c) => c.owner === this.teamId);
-      const cityIndex = parseInt(select.value);
-      city = myCities[cityIndex];
-    }
-
-    if (city) {
-      this.queueBuildUnit(city.x, city.y, unitType);
-    } else {
-      Panels.addTerminalMessage('No city selected for build', 'warning');
-    }
   },
 
   /**
@@ -542,6 +465,8 @@ const App = {
     const modeSelect = document.getElementById('setting-map-size');
     const timeoutInput = document.getElementById('setting-timeout');
     const noTimeoutCheck = document.getElementById('setting-no-timeout');
+    const oversightTimeoutInput = document.getElementById('setting-oversight-timeout');
+    const autosubmitBufferInput = document.getElementById('setting-autosubmit-buffer');
 
     const mode = modeSelect ? modeSelect.value : 'blitz';
     const turnTimeout =
@@ -550,9 +475,29 @@ const App = {
         : timeoutInput
           ? parseInt(timeoutInput.value) || 2000
           : 2000;
+    const oversightTimeoutMs = oversightTimeoutInput
+      ? parseInt(oversightTimeoutInput.value) || 30000
+      : 30000;
+
+    // Apply auto-submit buffer locally
+    const autosubmitBuffer = autosubmitBufferInput
+      ? parseInt(autosubmitBufferInput.value) || 500
+      : 500;
+    if (typeof ManualPlay !== 'undefined') {
+      ManualPlay.AUTO_SUBMIT_BUFFER_MS = autosubmitBuffer;
+    }
+
+    // Apply oversight auto-approve delay locally
+    const oversightApproveInput = document.getElementById('setting-oversight-approve');
+    const oversightApproveDelay = oversightApproveInput
+      ? parseInt(oversightApproveInput.value) || 500
+      : 500;
+    if (typeof Oversight !== 'undefined') {
+      Oversight.autoApproveDelay = oversightApproveDelay;
+    }
 
     Panels.addTerminalMessage(
-      `Applying settings: mode=${mode}, timeout=${turnTimeout || 'none'}`,
+      `Applying settings: mode=${mode}, timeout=${turnTimeout || 'none'}, oversight=${oversightTimeoutMs}ms, autosubmit=${autosubmitBuffer}ms`,
       'info'
     );
 
@@ -562,6 +507,7 @@ const App = {
       settings: {
         mode: mode,
         turnTimeout: turnTimeout,
+        oversightTimeoutMs: oversightTimeoutMs,
       },
     });
   },
@@ -631,7 +577,7 @@ const App = {
    */
   handleTurnStart(data) {
     this.turnStartTime = Date.now();
-    this.turnTimeout = data.timeout || 2000;
+    this.turnTimeout = data.timeout || 0;
 
     // Process state if included
     if (data.state) {
@@ -649,7 +595,26 @@ const App = {
       }
     }
 
-    this.startTimer();
+    // Only start timer when there's a timeout and we're viewing live
+    const isLive = typeof Replay === 'undefined' || Replay.isViewingLive();
+    if (this.turnTimeout > 0 && isLive) {
+      this.startTimer();
+    } else if (this.turnTimeout <= 0) {
+      this.stopTimer();
+      Panels.updateTimerDisplay('no-timeout');
+    } else {
+      this.stopTimer();
+      Panels.updateTimerDisplay('replay');
+    }
+
+    // ManualPlay: advance path plans, reset submit flag, start auto-submit
+    if (typeof ManualPlay !== 'undefined' && ManualPlay.active) {
+      ManualPlay._refreshProjectedGold();
+      ManualPlay.turnSubmitted = false;
+      if (data.state) ManualPlay.advancePathPlans(data.state);
+      ManualPlay.startAutoSubmit(this.turnTimeout, this.turnStartTime);
+    }
+
     Panels.addTerminalMessage(`Turn ${data.turn} started`, 'info');
   },
 
@@ -671,6 +636,19 @@ const App = {
       if (typeof Replay === 'undefined' || Replay.isViewingLive()) {
         Renderer.setGameState(data.state);
         this.updateUI();
+      }
+    }
+
+    // ManualPlay: stop auto-submit and clear queue for next turn
+    if (typeof ManualPlay !== 'undefined' && ManualPlay.active) {
+      if (ManualPlay.oversightMode) {
+        // In oversight mode, deactivate ManualPlay between turns.
+        // The next OVERSIGHT_REVIEW will re-activate it with fresh actions.
+        Oversight.stopAutoApprove();
+        ManualPlay.deactivateOversight();
+      } else {
+        ManualPlay.stopAutoSubmit();
+        ManualPlay.clearQueue();
       }
     }
 
@@ -838,8 +816,11 @@ const App = {
       Panels.updateBuildCities(state.cities, this.teamId);
     }
 
-    // Update queued actions
-    Panels.updateQueuedCount(this.actionQueue.length);
+    // Update command bar gold and queue
+    if (typeof ManualPlay !== 'undefined' && ManualPlay.active) {
+      ManualPlay._refreshProjectedGold();
+      ManualPlay._updateQueueUI();
+    }
   },
 
   /**
@@ -848,7 +829,19 @@ const App = {
   startTimer() {
     this.stopTimer();
 
+    if (this.turnTimeout <= 0) {
+      Panels.updateTimerDisplay('no-timeout');
+      return;
+    }
+
     this.timerInterval = setInterval(() => {
+      // Stop if we switched away from live
+      if (typeof Replay !== 'undefined' && !Replay.isViewingLive()) {
+        this.stopTimer();
+        Panels.updateTimerDisplay('replay');
+        return;
+      }
+
       const elapsed = Date.now() - this.turnStartTime;
       const remaining = Math.max(0, this.turnTimeout - elapsed);
       Panels.updateTimer(remaining);
@@ -869,56 +862,16 @@ const App = {
     }
   },
 
-  /**
-   * Add action to queue
-   */
-  queueAction(action) {
-    this.actionQueue.push(action);
-    Panels.updateActionQueue(this.actionQueue);
-    Panels.addTerminalMessage(`Action queued: ${action.action}`, 'action');
-  },
-
-  /**
-   * Remove action from queue
-   */
   removeAction(index) {
-    if (index >= 0 && index < this.actionQueue.length) {
-      const removed = this.actionQueue.splice(index, 1)[0];
-      Panels.updateActionQueue(this.actionQueue);
-      Panels.addTerminalMessage(`Removed action: ${removed.action}`, 'info');
-    }
+    if (typeof ManualPlay !== 'undefined') ManualPlay.removeAction(index);
   },
 
-  /**
-   * Clear action queue
-   */
   clearActionQueue() {
-    this.actionQueue = [];
-    Panels.updateActionQueue(this.actionQueue);
-    Panels.addTerminalMessage('Action queue cleared', 'info');
+    if (typeof ManualPlay !== 'undefined') ManualPlay.clearQueue();
   },
 
-  /**
-   * Submit actions to server
-   */
   submitActions() {
-    if (this.isSpectator) {
-      Panels.addTerminalMessage('Cannot submit actions as spectator', 'warning');
-      return;
-    }
-
-    if (this.actionQueue.length === 0) {
-      Panels.addTerminalMessage('No actions to submit', 'warning');
-      return;
-    }
-
-    this.send({
-      type: 'SUBMIT_ACTIONS',
-      actions: this.actionQueue,
-    });
-
-    Panels.addTerminalMessage(`Submitted ${this.actionQueue.length} actions`, 'success');
-    this.clearActionQueue();
+    if (typeof ManualPlay !== 'undefined') ManualPlay.submitActions();
   },
 
   /**
@@ -1024,7 +977,7 @@ const Replay = {
   currentIndex: -1, // turn index within history
   isPlaying: false,
   playTimer: null,
-  speed: 4,
+  speed: 8,
   followLive: true,
 
   init() {

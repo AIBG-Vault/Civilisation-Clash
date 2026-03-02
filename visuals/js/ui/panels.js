@@ -7,7 +7,6 @@ const Panels = {
     player0: null,
     player1: null,
     turn: null,
-    controls: null,
     replay: null,
     manual: null,
     inspector: null,
@@ -23,7 +22,8 @@ const Panels = {
   // State
   terminalOpen: false,
   inspectorOpen: false,
-  manualPanelOpen: false,
+  rightPanelOpen: false,
+  rightPanelMode: null, // 'manual' | 'oversight'
   selectedUnitType: null,
 
   /**
@@ -34,9 +34,8 @@ const Panels = {
     this.elements.player0 = document.getElementById('panel-player0');
     this.elements.player1 = document.getElementById('panel-player1');
     this.elements.turn = document.getElementById('panel-turn');
-    this.elements.controls = document.getElementById('panel-controls');
     this.elements.replay = document.getElementById('panel-replay');
-    this.elements.manual = document.getElementById('panel-manual');
+    this.elements.manual = document.getElementById('right-panel');
     this.elements.inspector = document.getElementById('panel-inspector');
     this.elements.terminal = document.getElementById('terminal');
 
@@ -110,47 +109,61 @@ const Panels = {
     if (e.key === 'Escape') {
       this.closeAllModals();
       this.hideInspector();
+      // Close inline build popup
+      const popup = document.getElementById('inline-build-popup');
+      if (popup) popup.classList.add('hidden');
       if (this.terminalOpen) {
         this.toggleTerminal();
       }
       // Cancel any interaction mode
-      if (typeof App !== 'undefined') {
-        App.cancelInteractionMode();
+      if (typeof ManualPlay !== 'undefined' && ManualPlay.active) {
+        ManualPlay.setMode('select');
       }
     }
 
+    // Skip shortcuts if an input is focused
+    if (this.isInputFocused()) return;
+    if (e.ctrlKey || e.metaKey) return;
+
     // T for terminal
-    if (e.key === 't' && !e.ctrlKey && !e.metaKey && !this.isInputFocused()) {
+    if (e.key === 't') {
       this.toggleTerminal();
     }
 
     // Space for zoom to fit
-    if (e.key === ' ' && !this.isInputFocused()) {
+    if (e.key === ' ') {
       e.preventDefault();
       if (typeof Renderer !== 'undefined') {
         Renderer.zoomToFit();
       }
     }
 
-    // B for build (when playing)
-    if (e.key === 'b' && !e.ctrlKey && !e.metaKey && !this.isInputFocused()) {
-      if (typeof App !== 'undefined' && !App.isSpectator) {
-        toggleModal('modal-build');
-      }
+    // Manual play shortcuts
+    const mp = typeof ManualPlay !== 'undefined' && ManualPlay.active;
+
+    // S for select mode
+    if (e.key === 's' && mp) {
+      ManualPlay.setMode('select');
     }
 
-    // E for expand (when playing)
-    if (e.key === 'e' && !e.ctrlKey && !e.metaKey && !this.isInputFocused()) {
-      if (typeof App !== 'undefined' && !App.isSpectator) {
-        App.startExpandMode();
-      }
+    // E for expand mode
+    if (e.key === 'e' && mp) {
+      ManualPlay.setMode('expand');
     }
 
-    // C for build city (when playing)
-    if (e.key === 'c' && !e.ctrlKey && !e.metaKey && !this.isInputFocused()) {
-      if (typeof App !== 'undefined' && !App.isSpectator) {
-        App.startCityMode();
-      }
+    // C for build city mode
+    if (e.key === 'c' && mp) {
+      ManualPlay.setMode('build_city');
+    }
+
+    // B for build unit modal
+    if (e.key === 'b' && mp) {
+      toggleModal('modal-build');
+    }
+
+    // Enter to submit
+    if (e.key === 'Enter' && mp) {
+      ManualPlay.submitActions();
     }
   },
 
@@ -247,7 +260,7 @@ const Panels = {
     // Update owner
     const ownerEl = document.getElementById('inspect-owner');
     if (details.tile && details.tile.owner !== null) {
-      ownerEl.textContent = details.tile.owner === 0 ? 'Blue' : 'Red';
+      ownerEl.textContent = details.tile.owner === 0 ? 'Blue' : 'Orange';
       ownerEl.className = details.tile.owner === 0 ? 'text-team0' : 'text-team1';
     } else {
       ownerEl.textContent = 'Neutral';
@@ -323,23 +336,6 @@ const Panels = {
   },
 
   /**
-   * Toggle theme (light/dark)
-   */
-  toggleTheme() {
-    const html = document.documentElement;
-    const currentTheme = html.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-
-    html.setAttribute('data-theme', newTheme);
-    localStorage.setItem('theme', newTheme);
-
-    // Update Lucide icons (for sun/moon toggle)
-    if (typeof lucide !== 'undefined') {
-      lucide.createIcons();
-    }
-  },
-
-  /**
    * Update player stats panel
    */
   updatePlayerStats(playerId, stats) {
@@ -403,6 +399,32 @@ const Panels = {
             turnInfo.monumentOwner === 0 ? 'text-team0 font-semibold' : 'text-team1 font-semibold';
         }
       }
+    }
+  },
+
+  /**
+   * Update timer display to a special state (no-timeout, paused, replay, reset)
+   */
+  updateTimerDisplay(mode) {
+    const el = document.getElementById('timer');
+    if (!el) return;
+
+    el.classList.remove('timer-warning', 'timer-critical', 'timer-paused', 'timer-no-timeout');
+
+    switch (mode) {
+      case 'no-timeout':
+        el.textContent = '\u221E';
+        el.classList.add('timer-no-timeout');
+        break;
+      case 'paused':
+        el.textContent = 'PAUSED';
+        el.classList.add('timer-paused');
+        break;
+      case 'replay':
+      case 'reset':
+      case 'stopped':
+        el.textContent = '--:--';
+        break;
     }
   },
 
@@ -473,13 +495,7 @@ const Panels = {
     }
   },
 
-  /**
-   * Update queued actions count
-   */
-  updateQueuedCount(count) {
-    const el = document.getElementById('queued-count');
-    if (el) el.textContent = count;
-  },
+  // updateQueuedCount removed — gameplay panel handles queue display now
 
   /**
    * Add message to terminal
@@ -572,13 +588,41 @@ const Panels = {
   },
 
   /**
-   * Toggle manual play panel
+   * Open right panel with specified mode
+   */
+  openRightPanel(mode) {
+    const panel = this.elements.manual;
+    const manualContent = document.getElementById('panel-manual-content');
+    const oversightContent = document.getElementById('panel-oversight-content');
+
+    // Show correct content pane
+    if (manualContent) manualContent.classList.toggle('hidden', mode !== 'manual');
+    if (oversightContent) oversightContent.classList.toggle('hidden', mode !== 'oversight');
+
+    // Open drawer
+    if (panel) panel.classList.add('open');
+    this.rightPanelOpen = true;
+    this.rightPanelMode = mode;
+  },
+
+  /**
+   * Close right panel
+   */
+  closeRightPanel() {
+    const panel = this.elements.manual;
+    if (panel) panel.classList.remove('open');
+    this.rightPanelOpen = false;
+    this.rightPanelMode = null;
+  },
+
+  /**
+   * Toggle manual play panel (backward compat)
    */
   toggleManualPanel() {
-    this.manualPanelOpen = !this.manualPanelOpen;
-
-    if (this.elements.manual) {
-      this.elements.manual.classList.toggle('open', this.manualPanelOpen);
+    if (this.rightPanelOpen && this.rightPanelMode === 'manual') {
+      this.closeRightPanel();
+    } else {
+      this.openRightPanel('manual');
     }
   },
 
@@ -594,15 +638,19 @@ const Panels = {
     if (actionsSection) actionsSection.classList.remove('hidden');
 
     if (teamName) {
-      teamName.textContent = teamId === 0 ? 'Blue' : 'Red';
+      teamName.textContent = teamId === 0 ? 'Blue' : 'Orange';
       teamName.className = teamId === 0 ? 'font-semibold text-team0' : 'font-semibold text-team1';
     }
 
-    // Open the panel
-    this.manualPanelOpen = true;
-    if (this.elements.manual) {
-      this.elements.manual.classList.add('open');
-    }
+    // Hide oversight tab, highlight manual tab
+    const tabOversight = document.getElementById('tab-oversight');
+    const tabManual = document.getElementById('tab-manual');
+    if (tabOversight) tabOversight.classList.add('hidden');
+    if (tabManual) tabManual.classList.add('active');
+
+    // Open the right panel and show gameplay panel on the left
+    this.openRightPanel('manual');
+    this.showGameplayPanel(teamId);
   },
 
   /**
@@ -614,40 +662,19 @@ const Panels = {
 
     if (connectSection) connectSection.classList.remove('hidden');
     if (actionsSection) actionsSection.classList.add('hidden');
+
+    // Restore oversight tab, remove manual tab highlight
+    const tabOversight = document.getElementById('tab-oversight');
+    const tabManual = document.getElementById('tab-manual');
+    if (tabOversight) tabOversight.classList.remove('hidden');
+    if (tabManual) tabManual.classList.remove('active');
+
+    // Hide gameplay panel and clear pin state on disconnect
+    this.unpinGameplayPanel();
+    this.hideGameplayPanel();
   },
 
-  /**
-   * Update action queue display
-   */
-  updateActionQueue(actions) {
-    const container = document.getElementById('action-queue');
-    if (!container) return;
-
-    if (actions.length === 0) {
-      container.innerHTML = '<div class="text-slate-400 italic">No actions queued</div>';
-    } else {
-      container.innerHTML = actions
-        .map(
-          (action, i) => `
-        <div class="action-queue-item">
-          <span class="action-type">${action.action}</span>
-          <span class="action-details text-slate-500">${this.formatActionDetails(action)}</span>
-          <span class="action-remove" onclick="App.removeAction(${i})">
-            <i data-lucide="x" class="w-3 h-3"></i>
-          </span>
-        </div>
-      `
-        )
-        .join('');
-
-      // Re-render lucide icons
-      if (typeof lucide !== 'undefined') {
-        lucide.createIcons();
-      }
-    }
-
-    this.updateQueuedCount(actions.length);
-  },
+  // updateActionQueue removed — gameplay panel handles queue display now
 
   /**
    * Format action details for display
@@ -667,18 +694,205 @@ const Panels = {
     }
   },
 
-  /**
-   * Apply saved theme on load
-   */
-  applySavedTheme() {
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme) {
-      document.documentElement.setAttribute('data-theme', savedTheme);
-    } else {
-      // Check system preference
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+  // --- Gameplay Panel (Left Side) ---
+
+  showGameplayPanel(teamId) {
+    const panel = document.getElementById('panel-gameplay');
+    if (panel) panel.classList.remove('hidden');
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+
+    // Set team name (after lucide so it doesn't get overwritten)
+    const teamName = document.getElementById('gp-team-name');
+    if (teamName) {
+      teamName.textContent = teamId === 0 ? 'Blue' : 'Orange';
+      teamName.className =
+        teamId === 0 ? 'font-semibold text-xs text-team0' : 'font-semibold text-xs text-team1';
     }
+
+    // Set team color on panel and indicator strip
+    const teamColor = teamId === 0 ? 'var(--team-0)' : 'var(--team-1)';
+    if (panel) {
+      panel.style.setProperty('--active-team-color', teamColor);
+    }
+    const trigger = document.getElementById('gameplay-hover-trigger');
+    if (trigger) {
+      trigger.style.setProperty('--indicator-color', teamColor);
+    }
+  },
+
+  hideGameplayPanel() {
+    const panel = document.getElementById('panel-gameplay');
+    if (panel) {
+      panel.classList.add('hidden');
+      // Don't remove 'pinned' here — preserve pin state across turns.
+      // Only unpinGameplayPanel() or full disconnect should clear it.
+    }
+    // Also hide inline build popup
+    const popup = document.getElementById('inline-build-popup');
+    if (popup) popup.classList.add('hidden');
+  },
+
+  pinGameplayPanel() {
+    const panel = document.getElementById('panel-gameplay');
+    if (panel) panel.classList.add('pinned');
+  },
+
+  unpinGameplayPanel() {
+    const panel = document.getElementById('panel-gameplay');
+    if (panel) panel.classList.remove('pinned');
+  },
+
+  updateGameplayMode(mode) {
+    const modes = ['select', 'expand', 'build_city'];
+    const ids = { select: 'gp-select', expand: 'gp-expand', build_city: 'gp-city' };
+    for (const m of modes) {
+      const btn = document.getElementById(ids[m]);
+      if (btn) btn.classList.toggle('active', m === mode);
+    }
+  },
+
+  updateGameplayGold(gold) {
+    const el = document.getElementById('gp-gold');
+    if (el) el.textContent = Math.floor(gold);
+  },
+
+  updateGameplayActionCount(count) {
+    const el = document.getElementById('gp-action-count');
+    if (el) el.textContent = `${count} action${count !== 1 ? 's' : ''}`;
+  },
+
+  updateGameplayCountdown(remainingMs) {
+    const el = document.getElementById('gp-countdown');
+    if (!el) return;
+    if (remainingMs === null || remainingMs === undefined) {
+      el.textContent = '';
+      el.classList.remove('timer-warning', 'timer-critical');
+      return;
+    }
+    const sec = Math.ceil(remainingMs / 1000);
+    el.textContent = `${sec}s`;
+    el.classList.remove('timer-warning', 'timer-critical');
+    if (sec <= 3) el.classList.add('timer-critical');
+    else if (sec <= 5) el.classList.add('timer-warning');
+  },
+
+  updateGameplayQueue(actions) {
+    // Update count
+    this.updateGameplayActionCount(actions.length);
+
+    // Update queue list
+    const list = document.getElementById('gp-queue-list');
+    if (!list) return;
+
+    if (actions.length === 0) {
+      list.innerHTML = '<div class="text-slate-400 italic text-xs">No actions queued</div>';
+    } else {
+      list.innerHTML = actions
+        .map(
+          (action, i) => `
+        <div class="action-queue-item">
+          <span class="action-type">${action.action}</span>
+          <span class="action-details text-slate-500">${this.formatActionDetails(action)}</span>
+          <span class="action-remove" onclick="if(typeof ManualPlay!=='undefined') ManualPlay.removeAction(${i})">
+            <i data-lucide="x" class="w-3 h-3"></i>
+          </span>
+        </div>
+      `
+        )
+        .join('');
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+  },
+
+  // --- Oversight Controls in Side Panel ---
+
+  showOversightConnected() {
+    const oversightConnect = document.getElementById('oversight-connect');
+    const oversightControls = document.getElementById('oversight-controls');
+
+    if (oversightConnect) oversightConnect.classList.add('hidden');
+    if (oversightControls) oversightControls.classList.remove('hidden');
+
+    // Hide manual tab, highlight oversight tab
+    const tabManual = document.getElementById('tab-manual');
+    const tabOversight = document.getElementById('tab-oversight');
+    if (tabManual) tabManual.classList.add('hidden');
+    if (tabOversight) tabOversight.classList.add('active');
+
+    // Open panel in oversight mode
+    this.openRightPanel('oversight');
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  },
+
+  showOversightDisconnected() {
+    const oversightConnect = document.getElementById('oversight-connect');
+    const oversightControls = document.getElementById('oversight-controls');
+
+    if (oversightConnect) oversightConnect.classList.remove('hidden');
+    if (oversightControls) oversightControls.classList.add('hidden');
+
+    // Restore manual tab, remove oversight tab highlight
+    const tabManual = document.getElementById('tab-manual');
+    const tabOversight = document.getElementById('tab-oversight');
+    if (tabManual) tabManual.classList.remove('hidden');
+    if (tabOversight) tabOversight.classList.remove('active');
+  },
+
+  updateOversightTeam(teamId) {
+    const btn0 = document.getElementById('oversight-team-0');
+    const btn1 = document.getElementById('oversight-team-1');
+    if (btn0) btn0.classList.toggle('oversight-team-active', teamId === 0);
+    if (btn1) btn1.classList.toggle('oversight-team-active', teamId === 1);
+  },
+
+  updateOversightCountdown(ms) {
+    const el = document.getElementById('oversight-countdown');
+    if (!el) return;
+    if (ms === null || ms === undefined) {
+      el.textContent = '';
+    } else {
+      el.textContent = (ms / 1000).toFixed(1) + 's';
+    }
+  },
+
+  updateOversightPause(paused) {
+    const label = document.getElementById('oversight-pause-label');
+    if (label) label.textContent = paused ? 'Resume' : 'Pause';
+  },
+
+  // --- Inline Build Popup ---
+
+  showInlineBuildPopup(city) {
+    if (typeof ManualPlay !== 'undefined') {
+      ManualPlay._pendingBuildCity = city;
+    }
+
+    const popup = document.getElementById('inline-build-popup');
+    if (!popup) return;
+
+    // Position near the city on screen
+    if (typeof Isometric !== 'undefined') {
+      const canvas = document.getElementById('game-canvas');
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const screen = Isometric.gridToScreen(city.x, city.y);
+        popup.style.left = rect.left + screen.x - 90 + 'px';
+        popup.style.top = rect.top + screen.y - 70 + 'px';
+      }
+    }
+
+    popup.classList.remove('hidden');
+
+    // Close on outside click (one-time listener)
+    const closeHandler = (e) => {
+      if (!popup.contains(e.target)) {
+        popup.classList.add('hidden');
+        document.removeEventListener('mousedown', closeHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener('mousedown', closeHandler), 10);
   },
 };
 
@@ -693,10 +907,6 @@ function toggleModal(modalId) {
 
 function toggleTerminal() {
   Panels.toggleTerminal();
-}
-
-function toggleTheme() {
-  Panels.toggleTheme();
 }
 
 function closeInspector() {

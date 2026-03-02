@@ -14,6 +14,7 @@ const CLIENT_MESSAGES = {
   GAME_CONTROL: 'GAME_CONTROL',
   LIST_SAVES: 'LIST_SAVES',
   LOAD_SAVE: 'LOAD_SAVE',
+  OVERSIGHT_APPROVE: 'OVERSIGHT_APPROVE',
 };
 
 const SERVER_MESSAGES = {
@@ -29,6 +30,7 @@ const SERVER_MESSAGES = {
   PLAYER_JOINED: 'PLAYER_JOINED',
   PLAYER_LEFT: 'PLAYER_LEFT',
   ERROR: 'ERROR',
+  OVERSIGHT_REVIEW: 'OVERSIGHT_REVIEW',
 };
 
 function createServer(options = {}) {
@@ -117,6 +119,9 @@ function handleMessage(ws, message, connectionManager, gameManager) {
     case CLIENT_MESSAGES.LOAD_SAVE:
       connectionManager.send(ws, { type: 'SAVE_LOADED', ...gameManager.loadSave(message.saveId) });
       break;
+    case CLIENT_MESSAGES.OVERSIGHT_APPROVE:
+      handleOversightApprove(ws, message, info, connectionManager, gameManager);
+      break;
     default:
       connectionManager.send(ws, { type: SERVER_MESSAGES.ERROR, error: `Unknown message type: ${type}` });
   }
@@ -138,6 +143,7 @@ function handleAuth(ws, message, connectionManager, gameManager) {
     teamId: result.teamId,
     name: result.assignedName,
     isSpectator: result.isSpectator,
+    isOversight: result.isOversight || false,
   });
 
   if (!result.isSpectator) {
@@ -198,6 +204,14 @@ function handleGameControl(ws, message, info, connectionManager, gameManager) {
   }
 }
 
+function handleOversightApprove(ws, message, info, connectionManager, gameManager) {
+  if (!info.isOversight) {
+    connectionManager.send(ws, { type: SERVER_MESSAGES.ERROR, error: 'Only oversight client can approve' });
+    return;
+  }
+  gameManager.approveOversight(message.actions);
+}
+
 function handleGameEvent(connectionManager, event, data) {
   console.log(`[Event] ${event}`);
   switch (event) {
@@ -232,6 +246,14 @@ function handleGameEvent(connectionManager, event, data) {
       break;
     case 'actions_submitted':
       console.log(`Team ${data.teamId} submitted ${data.validCount}/${data.totalCount} valid actions`);
+      break;
+    case 'oversight_review':
+      console.log(`Turn ${data.turn} awaiting oversight review`);
+      connectionManager.sendToOversight({
+        type: SERVER_MESSAGES.OVERSIGHT_REVIEW,
+        turn: data.turn,
+        actions: data.actions,
+      });
       break;
   }
 }
