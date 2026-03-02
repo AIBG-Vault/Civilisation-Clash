@@ -260,7 +260,7 @@ const Panels = {
     // Update owner
     const ownerEl = document.getElementById('inspect-owner');
     if (details.tile && details.tile.owner !== null) {
-      ownerEl.textContent = details.tile.owner === 0 ? 'Blue' : 'Orange';
+      ownerEl.textContent = details.tile.owner === 0 ? 'Cyan' : 'White';
       ownerEl.className = details.tile.owner === 0 ? 'text-team0' : 'text-team1';
     } else {
       ownerEl.textContent = 'Neutral';
@@ -638,7 +638,7 @@ const Panels = {
     if (actionsSection) actionsSection.classList.remove('hidden');
 
     if (teamName) {
-      teamName.textContent = teamId === 0 ? 'Blue' : 'Orange';
+      teamName.textContent = teamId === 0 ? 'Cyan' : 'White';
       teamName.className = teamId === 0 ? 'font-semibold text-team0' : 'font-semibold text-team1';
     }
 
@@ -705,7 +705,7 @@ const Panels = {
     // Set team name (after lucide so it doesn't get overwritten)
     const teamName = document.getElementById('gp-team-name');
     if (teamName) {
-      teamName.textContent = teamId === 0 ? 'Blue' : 'Orange';
+      teamName.textContent = teamId === 0 ? 'Cyan' : 'White';
       teamName.className =
         teamId === 0 ? 'font-semibold text-xs text-team0' : 'font-semibold text-xs text-team1';
     }

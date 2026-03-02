@@ -33,6 +33,11 @@ const App = {
     // Initialize panels
     Panels.init();
 
+    // Load unit weapon assets
+    if (typeof Units !== 'undefined') {
+      Units.loadAssets('assets/units');
+    }
+
     // Initialize renderer
     const canvas = document.getElementById('game-canvas');
     if (canvas) {
@@ -661,7 +666,7 @@ const App = {
   handleGameOver(data) {
     this.stopTimer();
 
-    const winner = data.winner !== null ? (data.winner === 0 ? 'Blue' : 'Orange') : 'Tie';
+    const winner = data.winner !== null ? (data.winner === 0 ? 'Cyan' : 'White') : 'Tie';
 
     Panels.addTerminalMessage(`Game Over! Winner: ${winner}`, 'success');
   },
@@ -884,8 +889,8 @@ const App = {
       gameOver: false,
       winner: null,
       players: [
-        { id: 0, name: 'Blue Empire', gold: 145, score: 320, income: 12 },
-        { id: 1, name: 'Orange Dynasty', gold: 98, score: 280, income: 8 },
+        { id: 0, name: 'Cyan Empire', gold: 145, score: 320, income: 12 },
+        { id: 1, name: 'White Dynasty', gold: 98, score: 280, income: 8 },
       ],
       map: {
         width: 15,

@@ -90,7 +90,7 @@ const ManualPlay = {
     this._updateQueueUI();
     Panels.showGameplayPanel(this.teamId);
     Panels.updateOversightTeam(0);
-    Panels.addTerminalMessage('Oversight: reviewing actions (Blue)', 'success');
+    Panels.addTerminalMessage('Oversight: reviewing actions (Cyan)', 'success');
   },
 
   deactivateOversight() {
@@ -113,7 +113,7 @@ const ManualPlay = {
     this._updateQueueUI();
     Panels.showGameplayPanel(newTeamId);
     Panels.updateOversightTeam(newTeamId);
-    Panels.addTerminalMessage(`Switched to ${newTeamId === 0 ? 'Blue' : 'Orange'} team`, 'info');
+    Panels.addTerminalMessage(`Switched to ${newTeamId === 0 ? 'Cyan' : 'White'} team`, 'info');
   },
 
   // --- Click Dispatch ---

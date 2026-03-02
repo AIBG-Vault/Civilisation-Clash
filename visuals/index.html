@@ -13,10 +13,10 @@
         theme: {
           extend: {
             colors: {
-              team0: '#0071e3',
-              team0Light: '#4da3ff',
-              team1: '#dc2626',
-              team1Light: '#f87171',
+              team0: '#00ccaa',
+              team0Light: '#33ddc0',
+              team1: '#e0e0e0',
+              team1Light: '#ffffff',
               field: '#90b060',
               mountain: '#8b8b8b',
               water: '#5b9bd5',
@@ -257,7 +257,7 @@
         <div id="panel-gameplay" class="hidden">
           <!-- Compact header: team + gold + countdown + close -->
           <div class="flex items-center gap-2 px-3 py-2 border-b border-slate-700">
-            <span id="gp-team-name" class="font-semibold text-xs text-team0">Blue</span>
+            <span id="gp-team-name" class="font-semibold text-xs text-team0">Cyan</span>
             <div class="flex items-center gap-1 text-xs" title="Projected gold">
               <i data-lucide="coins" class="w-3 h-3 text-yellow-500"></i>
               <span id="gp-gold" class="font-mono">0</span>
@@ -374,8 +374,8 @@
               <div>
                 <label class="block text-xs font-medium mb-1">Team</label>
                 <select id="manual-team" class="input-field w-full text-sm">
-                  <option value="0">Blue (Team 0)</option>
-                  <option value="1">Red (Team 1)</option>
+                  <option value="0">Cyan (Team 0)</option>
+                  <option value="1">White (Team 1)</option>
                 </select>
               </div>
               <div>
@@ -401,7 +401,7 @@
             <div id="manual-actions" class="px-3 pb-3 space-y-3 hidden">
               <div class="flex items-center justify-between text-sm">
                 <span class="text-slate-500 dark:text-slate-400">Connected as</span>
-                <span id="manual-team-name" class="font-semibold text-team0">Blue</span>
+                <span id="manual-team-name" class="font-semibold text-team0">Cyan</span>
               </div>
               <div class="text-xs text-slate-400 dark:text-slate-500">
                 Use the gameplay panel on the left to queue actions.
@@ -468,14 +468,14 @@
                   class="action-btn flex-1 justify-center oversight-team-active"
                   onclick="if(typeof ManualPlay!=='undefined') ManualPlay.switchTeam(0)"
                 >
-                  <span class="text-xs font-bold">Blue</span>
+                  <span class="text-xs font-bold">Cyan</span>
                 </button>
                 <button
                   id="oversight-team-1"
                   class="action-btn flex-1 justify-center"
                   onclick="if(typeof ManualPlay!=='undefined') ManualPlay.switchTeam(1)"
                 >
-                  <span class="text-xs font-bold">Orange</span>
+                  <span class="text-xs font-bold">White</span>
                 </button>
               </div>
 
@@ -540,7 +540,7 @@
             </div>
             <div class="flex justify-between">
               <span class="text-slate-500 dark:text-slate-400">Owner</span>
-              <span id="inspect-owner" class="text-team0">Blue</span>
+              <span id="inspect-owner" class="text-team0">Cyan</span>
             </div>
             <div class="flex justify-between">
               <span class="text-slate-500 dark:text-slate-400">Income</span>
@@ -829,5 +829,31 @@
     <script src="js/game/manual-play.js"></script>
     <script src="js/game/oversight.js"></script>
     <script src="js/app.js"></script>
+
+    <!-- Branding -->
+    <div id="branding" class="fixed bottom-4 left-4 select-none pointer-events-none z-10">
+      <div
+        style="
+          font-family: 'Courier New', monospace;
+          font-weight: 700;
+          font-size: 18px;
+          letter-spacing: 0.15em;
+          color: #00bf9a;
+        "
+      >
+        AIBG <span style="color: #ffffff">X</span>
+      </div>
+      <div
+        style="
+          font-family: 'Courier New', monospace;
+          font-size: 9px;
+          letter-spacing: 0.2em;
+          color: rgba(255, 255, 255, 0.35);
+          margin-top: 1px;
+        "
+      >
+        CIVILISATION CLASH
+      </div>
+    </div>
   </body>
 </html>

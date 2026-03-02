@@ -1,39 +1,68 @@
 /**
- * Unit rendering utilities
+ * Unit rendering utilities — draws team-colored weapon icons from PNG assets
  */
 const Units = {
   // Unit type configurations
   types: {
     SOLDIER: {
-      letter: 'S',
+      asset: 'sword',
       maxHp: 3,
-      color: { light: '#1a5fb4', dark: '#3584e4' },
+      figureCount: 8,
+      figure: { head: '#aaaaaa', body: '#777777', legs: '#555555' },
     },
     ARCHER: {
-      letter: 'A',
+      asset: 'bow',
       maxHp: 2,
-      color: { light: '#26a269', dark: '#33d17a' },
+      figureCount: 6,
+      figure: { head: '#c49a6c', body: '#8B5E3C', legs: '#5a3a20' },
     },
     RAIDER: {
-      letter: 'R',
+      asset: 'axe',
       maxHp: 1,
-      color: { light: '#a51d2d', dark: '#ed333b' },
+      figureCount: 4,
+      figure: { head: '#bbbbbb', body: '#3a3a3a', legs: '#222222' },
     },
   },
 
   // Team colors
   teamColors: {
-    0: { fill: '#0071e3', stroke: '#4da3ff', shadow: 'rgba(0, 113, 227, 0.5)' },
-    1: { fill: '#dc2626', stroke: '#f87171', shadow: 'rgba(220, 38, 38, 0.5)' },
+    0: { fill: '#00ccaa', stroke: '#33ddc0', shadow: 'rgba(0, 204, 170, 0.5)' },
+    1: { fill: '#e0e0e0', stroke: '#ffffff', shadow: 'rgba(255, 255, 255, 0.4)' },
+  },
+
+  // Cached Image objects: { 'sword_0': Image, 'sword_1': Image, ... }
+  _images: {},
+  _loaded: false,
+
+  /**
+   * Pre-load PNG assets. Call once at startup.
+   */
+  loadAssets(basePath) {
+    const assets = ['sword', 'bow', 'axe'];
+    const teamIds = [0, 1];
+    let remaining = assets.length * teamIds.length;
+
+    for (const name of assets) {
+      for (const teamId of teamIds) {
+        const key = `${name}_${teamId}`;
+        const img = new Image();
+        img.onload = () => {
+          this._images[key] = img;
+          remaining--;
+          if (remaining === 0) this._loaded = true;
+        };
+        img.onerror = () => {
+          console.warn(`[Units] Failed to load: ${key}.png`);
+          remaining--;
+          if (remaining === 0) this._loaded = true;
+        };
+        img.src = `${basePath}/${key}.png`;
+      }
+    }
   },
 
   /**
    * Draw a unit at the specified grid position
-   * @param {CanvasRenderingContext2D} ctx - Canvas context
-   * @param {number} x - Grid X
-   * @param {number} y - Grid Y
-   * @param {Object} unit - Unit data {type, owner, hp, canMove}
-   * @param {Object} options - Rendering options
    */
   drawUnit(ctx, x, y, unit, options = {}) {
     const center = Isometric.gridToScreen(x, y);
@@ -43,128 +72,153 @@ const Units = {
 
     if (!teamColor || !unitType) return;
 
-    // Offset Y to place unit on top of tile
     const unitY = center.y - 8 * scale;
 
-    // Draw shadow
-    ctx.beginPath();
-    ctx.ellipse(center.x, center.y + 2 * scale, 12 * scale, 6 * scale, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.fill();
-
-    // Selection bounce animation offset
+    // Selection bounce
     let bounceOffset = 0;
     if (options.selected) {
       bounceOffset = Math.sin(Date.now() / 150) * 3 * scale;
     }
 
-    // Draw unit body (circular badge)
-    const radius = 14 * scale;
-    ctx.beginPath();
-    ctx.arc(center.x, unitY - bounceOffset, radius, 0, Math.PI * 2);
+    const wx = center.x;
+    const wy = unitY - bounceOffset;
 
-    // Team color fill
-    ctx.fillStyle = teamColor.fill;
-    ctx.fill();
-
-    // Border
-    ctx.strokeStyle = teamColor.stroke;
-    ctx.lineWidth = 2 * scale;
-    ctx.stroke();
-
-    // Selection glow
+    // Selection ring (no shadowBlur — it's slow)
     if (options.selected) {
-      ctx.shadowColor = teamColor.shadow;
-      ctx.shadowBlur = 15;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    }
-
-    // Unit letter
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${14 * scale}px -apple-system, BlinkMacSystemFont, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(unitType.letter, center.x, unitY - bounceOffset);
-
-    // HP bar (below unit)
-    this.drawHpBar(
-      ctx,
-      center.x,
-      unitY + radius + 4 * scale - bounceOffset,
-      unit.hp,
-      unitType.maxHp,
-      scale
-    );
-
-    // Can't move indicator (grayed out overlay)
-    if (!unit.canMove && !options.hideCanMove) {
+      ctx.strokeStyle = teamColor.fill;
+      ctx.lineWidth = 2 * scale;
       ctx.beginPath();
-      ctx.arc(center.x, unitY - bounceOffset, radius, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-      ctx.fill();
+      ctx.arc(wx, wy, 12 * scale, 0, Math.PI * 2);
+      ctx.stroke();
     }
 
-    // Draw movement indicators if selected
+    // Scattered tiny figures on the tile (drawn first, behind icon)
+    const fig = unitType.figure;
+    if (fig) {
+      this.drawFigures(ctx, center.x, center.y, x, y, unitType, scale);
+    }
+
+    // Draw weapon icon on top of figures
+    const drawSize = 24 * scale;
+    const key = `${unitType.asset}_${unit.owner}`;
+    const img = this._images[key];
+
+    if (img) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, wx - drawSize / 2, wy - drawSize / 2, drawSize, drawSize);
+      ctx.imageSmoothingEnabled = true;
+    } else {
+      ctx.fillStyle = teamColor.fill;
+      ctx.font = `bold ${10 * scale}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(unit.type[0], wx, wy);
+    }
+
+    // HP bar (below weapon icon)
+    this.drawHpBar(ctx, center.x, wy + drawSize / 2 + 2 * scale, unit.hp, unitType.maxHp, scale);
+
+    // Move/attack indicators
     if (options.showRange && options.validMoves) {
       this.drawMovementIndicators(ctx, options.validMoves);
     }
-
-    // Draw attack indicators if selected
     if (options.showRange && options.validAttacks) {
       this.drawAttackIndicators(ctx, options.validAttacks);
     }
   },
 
   /**
-   * Draw HP bar below unit
+   * Simple seeded random — consistent positions per tile
+   */
+  _seededRand(seed) {
+    let s = seed;
+    return () => {
+      s = (s * 16807 + 0) % 2147483647;
+      return (s - 1) / 2147483646;
+    };
+  },
+
+  /**
+   * Draw scattered tiny soldier figures on the tile
+   */
+  drawFigures(ctx, tileCx, tileCy, gx, gy, unitType, scale) {
+    const fig = unitType.figure;
+    const count = unitType.figureCount || 4;
+    const rand = this._seededRand(gx * 1000 + gy * 37 + 7);
+
+    const hw = (Isometric.tileWidth / 2) * scale;
+    const hh = (Isometric.tileHeight / 2) * scale;
+    const p = scale; // pixel unit
+
+    for (let i = 0; i < count; i++) {
+      // Random position within the isometric diamond
+      // Generate random point, reject if outside diamond
+      let fx, fy;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const rx = (rand() - 0.5) * 1.4; // -0.7 to 0.7
+        const ry = (rand() - 0.5) * 1.4;
+        if (Math.abs(rx) + Math.abs(ry) <= 0.7) {
+          fx = tileCx + rx * hw;
+          fy = tileCy + ry * hh;
+          break;
+        }
+      }
+      if (fx === undefined) continue;
+
+      // Head (2x2)
+      ctx.fillStyle = fig.head;
+      ctx.fillRect(fx - p, fy, 2 * p, 2 * p);
+      // Body (2x3)
+      ctx.fillStyle = fig.body;
+      ctx.fillRect(fx - p, fy + 2 * p, 2 * p, 3 * p);
+      // Legs (split)
+      ctx.fillStyle = fig.legs;
+      ctx.fillRect(fx - p, fy + 5 * p, p, 2 * p);
+      ctx.fillRect(fx, fy + 5 * p, p, 2 * p);
+    }
+  },
+
+  /**
+   * Draw HP bar below unit — simple colored line
    */
   drawHpBar(ctx, x, y, currentHp, maxHp, scale) {
-    const width = 24 * scale;
-    const height = 4 * scale;
+    const width = 16 * scale;
     const hpPercent = currentHp / maxHp;
 
-    // Background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.beginPath();
-    ctx.roundRect(x - width / 2, y, width, height, 2 * scale);
-    ctx.fill();
+    let color = '#34c759';
+    if (hpPercent <= 0.33) color = '#ff3b30';
+    else if (hpPercent <= 0.66) color = '#ff9f0a';
 
-    // HP fill
-    let fillColor = '#34c759'; // Green
-    if (hpPercent <= 0.33) {
-      fillColor = '#ff3b30'; // Red
-    } else if (hpPercent <= 0.66) {
-      fillColor = '#ff9f0a'; // Orange
-    }
-
-    ctx.fillStyle = fillColor;
+    // Background line
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 3 * scale;
+    ctx.lineCap = 'butt';
     ctx.beginPath();
-    ctx.roundRect(x - width / 2, y, width * hpPercent, height, 2 * scale);
-    ctx.fill();
+    ctx.moveTo(x - width / 2, y);
+    ctx.lineTo(x + width / 2, y);
+    ctx.stroke();
+
+    // HP fill line
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2 * scale;
+    ctx.beginPath();
+    ctx.moveTo(x - width / 2, y);
+    ctx.lineTo(x - width / 2 + width * hpPercent, y);
+    ctx.stroke();
   },
 
   /**
    * Draw movement range indicators
-   * @param {CanvasRenderingContext2D} ctx - Canvas context
-   * @param {Array<{x: number, y: number}>} validMoves - Array of valid move positions
    */
   drawMovementIndicators(ctx, validMoves) {
     validMoves.forEach((pos) => {
       const corners = Isometric.getTileCorners(pos.x, pos.y);
-
       ctx.beginPath();
       ctx.moveTo(corners[0].x, corners[0].y);
-      for (let i = 1; i < corners.length; i++) {
-        ctx.lineTo(corners[i].x, corners[i].y);
-      }
+      for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i].x, corners[i].y);
       ctx.closePath();
-
-      // Green overlay
       ctx.fillStyle = 'rgba(52, 199, 89, 0.35)';
       ctx.fill();
-
-      // Dotted border
       ctx.setLineDash([4, 4]);
       ctx.strokeStyle = '#34c759';
       ctx.lineWidth = 2;
@@ -175,25 +229,16 @@ const Units = {
 
   /**
    * Draw attack range indicators
-   * @param {CanvasRenderingContext2D} ctx - Canvas context
-   * @param {Array<{x: number, y: number}>} validAttacks - Array of valid attack positions
    */
   drawAttackIndicators(ctx, validAttacks) {
     validAttacks.forEach((pos) => {
       const corners = Isometric.getTileCorners(pos.x, pos.y);
-
       ctx.beginPath();
       ctx.moveTo(corners[0].x, corners[0].y);
-      for (let i = 1; i < corners.length; i++) {
-        ctx.lineTo(corners[i].x, corners[i].y);
-      }
+      for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i].x, corners[i].y);
       ctx.closePath();
-
-      // Red overlay
       ctx.fillStyle = 'rgba(255, 59, 48, 0.35)';
       ctx.fill();
-
-      // Dotted border
       ctx.setLineDash([4, 4]);
       ctx.strokeStyle = '#ff3b30';
       ctx.lineWidth = 2;
@@ -204,10 +249,6 @@ const Units = {
 
   /**
    * Draw Zone of Control for soldiers
-   * @param {CanvasRenderingContext2D} ctx - Canvas context
-   * @param {number} x - Soldier grid X
-   * @param {number} y - Soldier grid Y
-   * @param {number} owner - Team owner
    */
   drawZoneOfControl(ctx, x, y, owner) {
     const teamColor = this.teamColors[owner];
@@ -215,19 +256,12 @@ const Units = {
 
     zocTiles.forEach((pos) => {
       const corners = Isometric.getTileCorners(pos.x, pos.y);
-
       ctx.beginPath();
       ctx.moveTo(corners[0].x, corners[0].y);
-      for (let i = 1; i < corners.length; i++) {
-        ctx.lineTo(corners[i].x, corners[i].y);
-      }
+      for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i].x, corners[i].y);
       ctx.closePath();
-
-      // Team-colored overlay with low opacity
-      ctx.fillStyle = owner === 0 ? 'rgba(0, 113, 227, 0.1)' : 'rgba(255, 107, 53, 0.1)';
+      ctx.fillStyle = owner === 0 ? 'rgba(0, 204, 170, 0.1)' : 'rgba(255, 255, 255, 0.08)';
       ctx.fill();
-
-      // Dashed border
       ctx.setLineDash([2, 4]);
       ctx.strokeStyle = teamColor.fill;
       ctx.lineWidth = 1;
@@ -238,26 +272,17 @@ const Units = {
     });
   },
 
-  /**
-   * Get all tiles within distance 2 (for ZoC)
-   */
   getDistance2Tiles(x, y) {
     const tiles = [];
     for (let dx = -2; dx <= 2; dx++) {
       for (let dy = -2; dy <= 2; dy++) {
         if (dx === 0 && dy === 0) continue;
-        const dist = Math.abs(dx) + Math.abs(dy);
-        if (dist <= 2) {
-          tiles.push({ x: x + dx, y: y + dy });
-        }
+        if (Math.abs(dx) + Math.abs(dy) <= 2) tiles.push({ x: x + dx, y: y + dy });
       }
     }
     return tiles;
   },
 
-  /**
-   * Get adjacent tiles (distance 1)
-   */
   getAdjacentTiles(x, y) {
     const tiles = [];
     for (let dx = -1; dx <= 1; dx++) {
@@ -271,74 +296,108 @@ const Units = {
 
   /**
    * Draw monument
-   * @param {CanvasRenderingContext2D} ctx - Canvas context
-   * @param {number} x - Grid X
-   * @param {number} y - Grid Y
-   * @param {number|null} controlledBy - Team controlling monument
    */
   drawMonument(ctx, x, y, controlledBy) {
     const center = Isometric.gridToScreen(x, y);
-    const scale = Isometric.zoom;
+    const s = Isometric.zoom;
+    const cx = center.x;
+    const cy = center.y;
+    const hw = (Isometric.tileWidth / 2) * s;
+    const hh = (Isometric.tileHeight / 2) * s;
 
-    // Glow effect
-    const time = Date.now() / 1000;
-    const glowIntensity = 0.5 + Math.sin(time * 2) * 0.2;
+    const hasOwner = controlledBy !== null && controlledBy !== undefined;
+    const tc = hasOwner ? this.teamColors[controlledBy] : null;
 
+    // Accent color — team or gold
+    const accent = tc ? tc.fill : '#ffd700';
+    const accentDark = hasOwner ? (controlledBy === 0 ? '#008c74' : '#808080') : '#b8860b';
+
+    // ─── Base platform (small isometric diamond, slightly raised) ───
+    const baseW = hw * 0.35;
+    const baseD = hh * 0.35;
+    const baseH = hh * 0.12;
+    const baseY = cy + hh * 0.1; // ground level, slightly forward
+
+    // Base left face
+    ctx.fillStyle = accentDark;
     ctx.beginPath();
-    ctx.arc(center.x, center.y - 10 * scale, 25 * scale, 0, Math.PI * 2);
-    const gradient = ctx.createRadialGradient(
-      center.x,
-      center.y - 10 * scale,
-      0,
-      center.x,
-      center.y - 10 * scale,
-      30 * scale
-    );
-    gradient.addColorStop(0, `rgba(255, 215, 0, ${glowIntensity})`);
-    gradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
-    ctx.fillStyle = gradient;
-    ctx.fill();
-
-    // Monument base (pentagon/obelisk shape)
-    ctx.beginPath();
-    ctx.moveTo(center.x, center.y - 30 * scale); // Top
-    ctx.lineTo(center.x + 8 * scale, center.y - 15 * scale);
-    ctx.lineTo(center.x + 6 * scale, center.y + 5 * scale);
-    ctx.lineTo(center.x - 6 * scale, center.y + 5 * scale);
-    ctx.lineTo(center.x - 8 * scale, center.y - 15 * scale);
+    ctx.moveTo(cx - baseW, baseY - baseH);
+    ctx.lineTo(cx, baseY + baseD - baseH);
+    ctx.lineTo(cx, baseY + baseD);
+    ctx.lineTo(cx - baseW, baseY);
     ctx.closePath();
-
-    // Fill based on controller
-    const teamColor =
-      controlledBy !== null && controlledBy !== undefined ? this.teamColors[controlledBy] : null;
-    if (teamColor) {
-      ctx.fillStyle = teamColor.fill;
-    } else {
-      ctx.fillStyle = '#ffd700'; // Gold when uncontrolled
-    }
     ctx.fill();
 
-    // Golden border
-    ctx.strokeStyle = '#b8860b';
-    ctx.lineWidth = 2 * scale;
-    ctx.stroke();
-
-    // Gem at top
+    // Base right face
+    ctx.fillStyle = hasOwner ? (controlledBy === 0 ? '#005540' : '#606060') : '#8B6914';
     ctx.beginPath();
-    ctx.arc(center.x, center.y - 28 * scale, 5 * scale, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
+    ctx.moveTo(cx + baseW, baseY - baseH);
+    ctx.lineTo(cx, baseY + baseD - baseH);
+    ctx.lineTo(cx, baseY + baseD);
+    ctx.lineTo(cx + baseW, baseY);
+    ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = '#ffd700';
-    ctx.lineWidth = 1.5 * scale;
-    ctx.stroke();
 
-    // Controller indicator (crown/flag)
-    if (teamColor) {
-      ctx.fillStyle = teamColor.fill;
-      ctx.font = `${10 * scale}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText('♚', center.x, center.y - 40 * scale);
-    }
+    // Base top face
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.moveTo(cx, baseY - baseD - baseH);
+    ctx.lineTo(cx + baseW, baseY - baseH);
+    ctx.lineTo(cx, baseY + baseD - baseH);
+    ctx.lineTo(cx - baseW, baseY - baseH);
+    ctx.closePath();
+    ctx.fill();
+
+    // ─── Obelisk (tall narrow isometric pillar) ───
+    const pillarW = hw * 0.08;
+    const pillarD = hh * 0.08;
+    const pillarH = hh * 1.4;
+    const pillarBase = baseY - baseH; // sits on top of platform
+
+    // Pillar left face (lit)
+    ctx.fillStyle = '#e8dcc8';
+    ctx.beginPath();
+    ctx.moveTo(cx - pillarW, pillarBase - pillarH);
+    ctx.lineTo(cx, pillarBase + pillarD - pillarH);
+    ctx.lineTo(cx, pillarBase + pillarD);
+    ctx.lineTo(cx - pillarW, pillarBase);
+    ctx.closePath();
+    ctx.fill();
+
+    // Pillar right face (shadow)
+    ctx.fillStyle = '#b8a888';
+    ctx.beginPath();
+    ctx.moveTo(cx + pillarW, pillarBase - pillarH);
+    ctx.lineTo(cx, pillarBase + pillarD - pillarH);
+    ctx.lineTo(cx, pillarBase + pillarD);
+    ctx.lineTo(cx + pillarW, pillarBase);
+    ctx.closePath();
+    ctx.fill();
+
+    // Pillar top face
+    ctx.fillStyle = '#f0e8d8';
+    ctx.beginPath();
+    ctx.moveTo(cx, pillarBase - pillarD - pillarH);
+    ctx.lineTo(cx + pillarW, pillarBase - pillarH);
+    ctx.lineTo(cx, pillarBase + pillarD - pillarH);
+    ctx.lineTo(cx - pillarW, pillarBase - pillarH);
+    ctx.closePath();
+    ctx.fill();
+
+    // ─── Gem on top (small diamond, team/gold colored) ───
+    const gemS = hh * 0.1;
+    const gemY = pillarBase - pillarH - pillarD;
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.moveTo(cx, gemY - gemS);
+    ctx.lineTo(cx + gemS * 0.7, gemY);
+    ctx.lineTo(cx, gemY + gemS * 0.5);
+    ctx.lineTo(cx - gemS * 0.7, gemY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1 * s;
+    ctx.stroke();
   },
 };
 

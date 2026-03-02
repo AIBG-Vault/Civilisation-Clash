@@ -13,10 +13,28 @@ const Renderer = {
   hoveredTile: null,
   selectedUnit: null,
 
+  // Spatial index — O(1) lookups
+  _tileGrid: null, // _tileGrid[y][x] = tile
+  _unitGrid: null, // _unitGrid[`x,y`] = unit
+  _cityGrid: null, // _cityGrid[`x,y`] = city
+  _capitalCache: null, // Set of "owner" ids whose first city has been found
+
+  // Tile layer cache — offscreen canvas redrawn only on state/zoom change
+  _tileCacheCanvas: null,
+  _tileCacheZoom: -1,
+  _tileCacheVersion: 0,
+  _tileCacheMinX: 0,
+  _tileCacheMinY: 0,
+  _tileCacheW: 0,
+  _tileCacheH: 0,
+  _stateVersion: 0,
+
+  // Damage effects (blood drops)
+  _damageEffects: [],
+
   // Render settings
   showGrid: true,
   showZoC: false,
-  showTerritoryBorders: true,
 
   // Interaction state
   isPanning: false,
@@ -312,28 +330,26 @@ const Renderer = {
   },
 
   /**
-   * Get tile at position
+   * Get tile at position — O(1) grid lookup
    */
   getTileAt(x, y) {
-    if (!this.gameState || !this.gameState.map) return null;
-    const tiles = this.gameState.map.tiles;
-    return tiles.find((t) => t.x === x && t.y === y);
+    if (!this._tileGrid) return null;
+    const row = this._tileGrid[y];
+    return row ? row[x] || null : null;
   },
 
   /**
-   * Get unit at position
+   * Get unit at position — O(1) hash lookup
    */
   getUnitAt(x, y) {
-    if (!this.gameState || !this.gameState.units) return null;
-    return this.gameState.units.find((u) => u.x === x && u.y === y);
+    return this._unitGrid ? this._unitGrid[`${x},${y}`] || null : null;
   },
 
   /**
-   * Get city at position
+   * Get city at position — O(1) hash lookup
    */
   getCityAt(x, y) {
-    if (!this.gameState || !this.gameState.cities) return null;
-    return this.gameState.cities.find((c) => c.x === x && c.y === y);
+    return this._cityGrid ? this._cityGrid[`${x},${y}`] || null : null;
   },
 
   /**
@@ -341,15 +357,161 @@ const Renderer = {
    */
   setGameState(state) {
     const firstLoad = !this.gameState;
+    const oldState = this.gameState;
+
+    // Detect HP loss → spawn blood effects
+    if (oldState && oldState.units && state && state.units) {
+      this._detectDamage(oldState.units, state.units);
+    }
+
     this.gameState = state;
     console.log(
       '[Renderer] setGameState called, state:',
       state ? `Turn ${state.turn}, ${state.map?.tiles?.length} tiles` : 'null'
     );
 
+    // Rebuild spatial indexes for O(1) lookups
+    this._stateVersion++;
+    this._buildSpatialIndexes(state);
+
     if (firstLoad && state) {
       console.log('[Renderer] First load, centering camera');
       this.centerCamera();
+    }
+  },
+
+  /**
+   * Compare old and new units — spawn blood effects only for units that lost HP at the same position
+   */
+  _detectDamage(oldUnits, newUnits) {
+    // Index new units by position
+    const newByPos = {};
+    for (const u of newUnits) newByPos[`${u.x},${u.y}`] = u;
+
+    for (const old of oldUnits) {
+      const key = `${old.x},${old.y}`;
+      const cur = newByPos[key];
+      // Only trigger blood when the same unit (same pos, owner, type) has lower HP
+      if (cur && cur.type === old.type && cur.owner === old.owner && cur.hp < old.hp) {
+        this._spawnBloodEffect(old.x, old.y, old.hp - cur.hp);
+      }
+    }
+  },
+
+  /**
+   * Spawn blood drop particles at a grid position
+   */
+  _spawnBloodEffect(gx, gy, hpLost) {
+    const now = Date.now();
+    const count = Math.min(hpLost * 5, 12); // more drops for more damage
+    for (let i = 0; i < count; i++) {
+      this._damageEffects.push({
+        gx,
+        gy,
+        // Random offset within tile
+        ox: (Math.random() - 0.5) * 16,
+        oy: (Math.random() - 0.5) * 8,
+        // Velocity (pixels per second) — float upward
+        vx: (Math.random() - 0.5) * 20,
+        vy: -(20 + Math.random() * 30),
+        // Gravity
+        gravity: 60,
+        spawn: now,
+        life: 500 + Math.random() * 300, // ms
+        size: 2 + Math.floor(Math.random() * 2), // 2-3 px
+      });
+    }
+  },
+
+  /**
+   * Update and draw blood drop effects
+   */
+  _drawDamageEffects(ctx, time) {
+    const now = Date.now();
+    const dt = 1 / 60; // approximate per-frame dt
+
+    for (let i = this._damageEffects.length - 1; i >= 0; i--) {
+      const e = this._damageEffects[i];
+      const age = now - e.spawn;
+      if (age > e.life) {
+        this._damageEffects.splice(i, 1);
+        continue;
+      }
+
+      // Update position
+      e.vy += e.gravity * dt;
+      e.ox += e.vx * dt;
+      e.oy += e.vy * dt;
+
+      // Screen position
+      const screen = Isometric.gridToScreen(e.gx, e.gy);
+      const s = Isometric.zoom;
+      const px = screen.x + e.ox * s;
+      const py = screen.y + e.oy * s - 8 * s; // offset up from tile center
+
+      // Fade out in last 30%
+      const lifeFrac = age / e.life;
+      const alpha = lifeFrac > 0.7 ? 1 - (lifeFrac - 0.7) / 0.3 : 1;
+
+      // Draw pixel blood drop (small filled rect for pixel art look)
+      const sz = e.size * s;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#cc1111';
+      ctx.fillRect(Math.round(px - sz / 2), Math.round(py - sz / 2), Math.ceil(sz), Math.ceil(sz));
+      // Darker core pixel
+      if (e.size > 2) {
+        ctx.fillStyle = '#880000';
+        const core = Math.ceil(s);
+        ctx.fillRect(Math.round(px - core / 2), Math.round(py - core / 2), core, core);
+      }
+      ctx.globalAlpha = 1;
+    }
+  },
+
+  /**
+   * Build spatial lookup grids from game state — called once per state update, not per frame
+   */
+  _buildSpatialIndexes(state) {
+    if (!state || !state.map) {
+      this._tileGrid = null;
+      this._unitGrid = null;
+      this._cityGrid = null;
+      this._capitalCache = null;
+      return;
+    }
+
+    // Tile grid: 2D array [y][x]
+    const w = state.map.width;
+    const h = state.map.height;
+    const grid = new Array(h);
+    for (let y = 0; y < h; y++) grid[y] = new Array(w).fill(null);
+    for (const tile of state.map.tiles) {
+      if (tile.y >= 0 && tile.y < h && tile.x >= 0 && tile.x < w) {
+        grid[tile.y][tile.x] = tile;
+      }
+    }
+    this._tileGrid = grid;
+
+    // Unit grid: key → unit
+    this._unitGrid = {};
+    if (state.units) {
+      for (const u of state.units) {
+        this._unitGrid[`${u.x},${u.y}`] = u;
+      }
+    }
+
+    // City grid + capital cache
+    this._cityGrid = {};
+    this._capitalCache = {};
+    if (state.cities) {
+      const seenOwner = {};
+      for (const c of state.cities) {
+        this._cityGrid[`${c.x},${c.y}`] = c;
+        if (!seenOwner[c.owner]) {
+          seenOwner[c.owner] = true;
+          this._capitalCache[`${c.x},${c.y}`] = true;
+        }
+      }
     }
   },
 
@@ -396,11 +558,6 @@ const Renderer = {
     // Draw map tiles
     this.drawTiles(ctx);
 
-    // Draw territory borders
-    if (this.showTerritoryBorders) {
-      this.drawTerritoryBorders(ctx);
-    }
-
     // Draw cities
     this.drawCities(ctx);
 
@@ -409,6 +566,11 @@ const Renderer = {
 
     // Draw units
     this.drawUnits(ctx, time);
+
+    // Draw blood drop effects (damage indicators)
+    if (this._damageEffects.length > 0) {
+      this._drawDamageEffects(ctx, time);
+    }
 
     // Draw selection/hover highlights
     this.drawInteractionHighlights(ctx);
@@ -421,21 +583,10 @@ const Renderer = {
   },
 
   /**
-   * Draw background gradient
+   * Draw background — flat color, no gradient per frame
    */
   drawBackground(ctx, rect) {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-
-    const gradient = ctx.createLinearGradient(0, 0, 0, rect.height);
-    if (isDark) {
-      gradient.addColorStop(0, '#1a1a2e');
-      gradient.addColorStop(1, '#16213e');
-    } else {
-      gradient.addColorStop(0, '#e8f0f8');
-      gradient.addColorStop(1, '#c8d8e8');
-    }
-
-    ctx.fillStyle = gradient;
+    ctx.fillStyle = '#1a1a1a';
     ctx.fillRect(0, 0, rect.width, rect.height);
   },
 
@@ -454,41 +605,120 @@ const Renderer = {
   },
 
   /**
-   * Draw all tiles
+   * Build the offscreen tile cache when state or zoom changes
    */
-  drawTiles(ctx) {
-    const { map } = this.gameState;
-    const bounds = Isometric.getVisibleBounds(
-      this.canvas.getBoundingClientRect().width,
-      this.canvas.getBoundingClientRect().height
-    );
+  _ensureTileCache() {
+    const zoom = Isometric.zoom;
+    if (
+      this._tileCacheCanvas &&
+      this._tileCacheZoom === zoom &&
+      this._tileCacheVersion === this._stateVersion
+    ) {
+      return;
+    }
 
-    // Draw tiles in isometric order (back to front)
-    for (let y = Math.max(0, bounds.minY); y < Math.min(map.height, bounds.maxY); y++) {
-      for (let x = Math.max(0, bounds.minX); x < Math.min(map.width, bounds.maxX); x++) {
-        const tile = this.getTileAt(x, y);
+    const map = this.gameState.map;
+    const W = map.width;
+    const H = map.height;
+    const grid = this._tileGrid;
+    if (!grid) return;
+
+    const tw = Isometric.tileWidth;
+    const th = Isometric.tileHeight;
+
+    // Bounding box of all tiles with offset (0,0)
+    // Extra top padding for terrain sprites (mountains) that extend above tiles
+    const spritePad = (tw / 2) * zoom;
+    const minX = -H * (tw / 2) * zoom;
+    const maxX = W * (tw / 2) * zoom;
+    const minY = -(th / 2) * zoom - spritePad;
+    const maxY = (W + H) * (th / 2) * zoom;
+
+    const cw = Math.ceil(maxX - minX);
+    const ch = Math.ceil(maxY - minY);
+
+    // Create or resize offscreen canvas (at device pixel ratio for crispness)
+    const dpr = window.devicePixelRatio || 1;
+    if (!this._tileCacheCanvas) {
+      this._tileCacheCanvas = document.createElement('canvas');
+    }
+    this._tileCacheCanvas.width = cw * dpr;
+    this._tileCacheCanvas.height = ch * dpr;
+
+    const tctx = this._tileCacheCanvas.getContext('2d');
+    tctx.setTransform(1, 0, 0, 1, 0, 0);
+    tctx.scale(dpr, dpr);
+    tctx.clearRect(0, 0, cw, ch);
+
+    // Temporarily shift Isometric offset so tiles render into positive coords
+    const savedOffX = Isometric.offsetX;
+    const savedOffY = Isometric.offsetY;
+    Isometric.offsetX = -minX;
+    Isometric.offsetY = -minY;
+
+    // Draw all tiles (no hover/selection — those are drawn dynamically)
+    for (let y = 0; y < H; y++) {
+      const row = grid[y];
+      for (let x = 0; x < W; x++) {
+        const tile = row[x];
         if (!tile) continue;
-
-        const isHovered = this.hoveredTile && this.hoveredTile.x === x && this.hoveredTile.y === y;
-        const isSelected =
-          this.selectedTile && this.selectedTile.x === x && this.selectedTile.y === y;
-
-        Tiles.drawTile(ctx, x, y, tile.type.toLowerCase(), tile.owner, {
-          hover: isHovered,
-          selected: isSelected,
-        });
+        Tiles.drawTile(tctx, x, y, tile.type.toLowerCase(), tile.owner, {});
       }
     }
+
+    // Restore
+    Isometric.offsetX = savedOffX;
+    Isometric.offsetY = savedOffY;
+
+    this._tileCacheZoom = zoom;
+    this._tileCacheVersion = this._stateVersion;
+    this._tileCacheMinX = minX;
+    this._tileCacheMinY = minY;
+    this._tileCacheW = cw;
+    this._tileCacheH = ch;
   },
 
   /**
-   * Draw territory borders
+   * Draw all tiles — uses offscreen cache, redraws only on state/zoom change
    */
-  drawTerritoryBorders(ctx) {
-    if (!this.gameState || !this.gameState.map) return;
+  drawTiles(ctx) {
+    this._ensureTileCache();
 
-    const { map } = this.gameState;
-    Tiles.drawTerritoryBorders(ctx, map.tiles, map.width, map.height);
+    if (this._tileCacheCanvas) {
+      // Single drawImage for the entire tile layer
+      ctx.drawImage(
+        this._tileCacheCanvas,
+        Isometric.offsetX + this._tileCacheMinX,
+        Isometric.offsetY + this._tileCacheMinY,
+        this._tileCacheW,
+        this._tileCacheH
+      );
+    }
+
+    // Draw hover/selection highlights dynamically (at most 2 tiles)
+    if (this.hoveredTile) {
+      const tile = this.getTileAt(this.hoveredTile.x, this.hoveredTile.y);
+      if (tile) {
+        const corners = Isometric.getTileCorners(this.hoveredTile.x, this.hoveredTile.y);
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.closePath();
+        ctx.strokeStyle = '#cccccc';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+    if (this.selectedTile) {
+      const corners = Isometric.getTileCorners(this.selectedTile.x, this.selectedTile.y);
+      ctx.beginPath();
+      ctx.moveTo(corners[0].x, corners[0].y);
+      for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+      ctx.closePath();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
   },
 
   /**
@@ -497,12 +727,10 @@ const Renderer = {
   drawCities(ctx) {
     if (!this.gameState || !this.gameState.cities) return;
 
-    this.gameState.cities.forEach((city, index) => {
-      // First city for each player is capital
-      const isCapital =
-        this.gameState.cities.filter((c) => c.owner === city.owner).indexOf(city) === 0;
+    for (const city of this.gameState.cities) {
+      const isCapital = (this._capitalCache && this._capitalCache[`${city.x},${city.y}`]) || false;
       Tiles.drawCity(ctx, city.x, city.y, city.owner, isCapital);
-    });
+    }
   },
 
   /**
@@ -552,13 +780,6 @@ const Renderer = {
    */
   toggleZoC() {
     this.showZoC = !this.showZoC;
-  },
-
-  /**
-   * Toggle territory borders visibility
-   */
-  toggleTerritoryBorders() {
-    this.showTerritoryBorders = !this.showTerritoryBorders;
   },
 
   // --- Manual Play Overlay Drawing ---
@@ -673,7 +894,7 @@ const Renderer = {
   drawMoveArrow(ctx, arrow) {
     const from = Isometric.gridToScreen(arrow.fromX, arrow.fromY);
     const to = Isometric.gridToScreen(arrow.toX, arrow.toY);
-    const teamColor = arrow.teamId === 0 ? '#0071e3' : '#dc2626';
+    const teamColor = arrow.teamId === 0 ? '#00ccaa' : '#e0e0e0';
 
     ctx.save();
     ctx.strokeStyle = teamColor;
@@ -706,9 +927,9 @@ const Renderer = {
 
   drawBuildMarker(ctx, marker) {
     const screen = Isometric.gridToScreen(marker.x, marker.y);
-    const teamColors = { 0: '#0071e3', 1: '#dc2626' };
+    const teamColors = { 0: '#00ccaa', 1: '#e0e0e0' };
     const colors = {
-      BUILD_UNIT: (marker.teamId !== undefined ? teamColors[marker.teamId] : null) || '#0071e3',
+      BUILD_UNIT: (marker.teamId !== undefined ? teamColors[marker.teamId] : null) || '#00ccaa',
       BUILD_CITY: '#ffd700',
       EXPAND_TERRITORY:
         (marker.teamId !== undefined ? teamColors[marker.teamId] : null) || '#3b82f6',
@@ -744,7 +965,7 @@ const Renderer = {
 
   drawPathPlanLine(ctx, plan, time) {
     if (!plan.points || plan.points.length < 2) return;
-    const teamColor = plan.teamId === 0 ? '#0071e3' : '#dc2626';
+    const teamColor = plan.teamId === 0 ? '#00ccaa' : '#e0e0e0';
 
     ctx.save();
     ctx.strokeStyle = teamColor;
@@ -794,7 +1015,7 @@ const Renderer = {
 
   drawSelectionGlow(ctx, unit) {
     const screen = Isometric.gridToScreen(unit.x, unit.y);
-    const teamColor = unit.owner === 0 ? '#0071e3' : '#dc2626';
+    const teamColor = unit.owner === 0 ? '#00ccaa' : '#e0e0e0';
 
     ctx.save();
     ctx.strokeStyle = teamColor;

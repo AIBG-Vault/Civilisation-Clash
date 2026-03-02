@@ -13,7 +13,7 @@ const { TERRAIN, MODES, MODE_SETTINGS } = require('./constants');
  * @returns {Object} Map object with tiles, cities, and monument
  */
 function generateMap(width, height, seed = null) {
-  // Simple seeded random for reproducibility
+  // Seeded PRNG for reproducibility
   let randomState = seed !== null ? seed : Date.now();
   const random = () => {
     randomState = (randomState * 1103515245 + 12345) & 0x7fffffff;
@@ -24,85 +24,178 @@ function generateMap(width, height, seed = null) {
   const centerX = Math.floor(width / 2);
   const centerY = Math.floor(height / 2);
 
-  // Generate half the map, then mirror for symmetry
-  // We'll generate the left half and mirror to right
-  const halfWidth = Math.ceil(width / 2);
+  // --- Biome map ---
+  // Horizontal split: above monument = plains, below = rocky.
+  // Line symmetric (same biome at (x,y) and (W-1-x,y)).
+  // Both biomes touch the monument area.
+  // Slight wave on the boundary for a natural feel.
+  const biomeWaveAmp = 0.8 + random() * 0.4;
+  const biomeWaveFreq = 0.3 + random() * 0.2;
+  const getBiome = (x, y) => {
+    const wave = Math.sin(x * biomeWaveFreq) * biomeWaveAmp;
+    return y - centerY + wave > 0 ? 'rocky' : 'plains';
+  };
 
-  // First pass: create base terrain for left half
+  // --- Generate left half (x < centerX), then 180° point-symmetric mirror ---
+  // Center column handled separately for perfect symmetry.
   const leftHalf = [];
+
+  // Simple 2D noise via scattered seed points
+  const noisePoints = [];
+  for (let i = 0; i < 8; i++) {
+    noisePoints.push({
+      x: random() * width,
+      y: random() * height,
+      v: random() * 0.4 - 0.2,
+    });
+  }
+  const noise = (px, py) => {
+    let val = 0;
+    for (const np of noisePoints) {
+      const d = Math.sqrt((px - np.x) ** 2 + (py - np.y) ** 2);
+      val += np.v / (1 + d * 0.3);
+    }
+    return val;
+  };
+
+  // Helper: generate terrain for a tile at (x, y)
+  const generateTerrain = (x, y) => {
+    // Edge tiles always water
+    if (x === 0 || x === width - 1 || y === 0 || y === height - 1) {
+      return TERRAIN.WATER;
+    }
+
+    // Normalized distance from center (elliptical for rectangular maps)
+    const nx = (x - centerX) / (width / 2);
+    const ny = (y - centerY) / (height / 2);
+    const dist = Math.sqrt(nx * nx + ny * ny);
+
+    // Island shape: land probability falls off from center
+    const landProb = 1.0 - dist * 0.85 + noise(x, y);
+
+    if (landProb > 0.35) {
+      // Determine mountain probability based on biome
+      const biome = getBiome(x, y);
+      let mountainProb;
+      if (biome === 'rocky') {
+        mountainProb = 0.22 + noise(x + 50, y + 50) * 0.1;
+      } else {
+        mountainProb = 0.04;
+      }
+
+      // Near the monument center, reduce mountains so both biomes are accessible
+      const distToCenter = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+      if (distToCenter < 3) {
+        mountainProb = 0;
+      }
+
+      if (random() < mountainProb) {
+        return TERRAIN.MOUNTAIN;
+      } else {
+        return TERRAIN.FIELD;
+      }
+    } else {
+      return TERRAIN.WATER;
+    }
+  };
+
+  // Generate left half (x = 0 to centerX-1)
   for (let y = 0; y < height; y++) {
     leftHalf[y] = [];
-    for (let x = 0; x < halfWidth; x++) {
-      // Distance from center for island shape
-      const distFromCenterX = Math.abs(x - centerX) / (width / 2);
-      const distFromCenterY = Math.abs(y - centerY) / (height / 2);
-      const distFromCenter = Math.sqrt(distFromCenterX ** 2 + distFromCenterY ** 2);
-
-      // Base probability of being land (higher near center)
-      let landProb = 1 - distFromCenter * 0.8;
-
-      // Add some noise
-      landProb += (random() - 0.5) * 0.3;
-
-      // Edge tiles are always water
-      if (x === 0 || y === 0 || y === height - 1) {
-        leftHalf[y][x] = TERRAIN.WATER;
-      } else if (landProb > 0.4) {
-        // Randomly add mountains (10% of land tiles)
-        if (random() < 0.1 && x !== 1 && x !== halfWidth - 1) {
-          leftHalf[y][x] = TERRAIN.MOUNTAIN;
-        } else {
-          leftHalf[y][x] = TERRAIN.FIELD;
-        }
-      } else {
-        leftHalf[y][x] = TERRAIN.WATER;
-      }
+    for (let x = 0; x < centerX; x++) {
+      leftHalf[y][x] = generateTerrain(x, y);
     }
   }
 
-  // Ensure starting positions are clear (near edges)
+  // Generate center column (x = centerX) — only top half (y < centerY),
+  // bottom half mirrored for perfect symmetry
+  const centerCol = [];
+  for (let y = 0; y < centerY; y++) {
+    centerCol[y] = generateTerrain(centerX, y);
+  }
+
+  // Clear area around starting positions (player 0 on left)
   const startY = centerY;
   const player0StartX = 2;
   const player1StartX = width - 3;
 
-  // Clear area around starting positions
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
       const y = startY + dy;
       const x = player0StartX + dx;
-      if (y >= 0 && y < height && x >= 0 && x < halfWidth) {
+      if (y >= 0 && y < height && x >= 0 && x < centerX) {
         leftHalf[y][x] = TERRAIN.FIELD;
       }
     }
   }
 
-  // Create full map with point symmetry (180-degree rotation)
+  // Clear area around monument (in leftHalf and centerCol)
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const y = centerY + dy;
+      const x = centerX + dx;
+      if (y >= 0 && y < height) {
+        if (x < centerX && x >= 0) {
+          leftHalf[y][x] = TERRAIN.FIELD;
+        } else if (x === centerX && y < centerY) {
+          centerCol[y] = TERRAIN.FIELD;
+        }
+      }
+    }
+  }
+
+  // --- Guarantee a connected land corridor from P0 start to monument ---
+  // Carve a 3-tile-wide horizontal path along y=centerY (±1).
+  // Point symmetry mirrors this for P1 automatically.
+  for (let x = 1; x < centerX; x++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      const y = startY + dy;
+      if (y > 0 && y < height - 1) {
+        if (leftHalf[y][x] === TERRAIN.WATER || leftHalf[y][x] === TERRAIN.MOUNTAIN) {
+          leftHalf[y][x] = TERRAIN.FIELD;
+        }
+      }
+    }
+  }
+  // Also ensure the center column at centerY ±1 is passable
+  for (let dy = -1; dy <= 1; dy++) {
+    const y = centerY + dy;
+    if (y > 0 && y < centerY) {
+      if (centerCol[y] === TERRAIN.WATER || centerCol[y] === TERRAIN.MOUNTAIN) {
+        centerCol[y] = TERRAIN.FIELD;
+      }
+    }
+  }
+
+  // Build full map with 180° point symmetry around center
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       let terrain;
 
-      // Center tile is monument
       if (x === centerX && y === centerY) {
         terrain = TERRAIN.MONUMENT;
-      } else if (x < halfWidth) {
-        terrain = leftHalf[y][x];
+      } else if (x === centerX) {
+        // Center column: top half generated, bottom half mirrored
+        if (y < centerY) {
+          terrain = centerCol[y] || TERRAIN.WATER;
+        } else {
+          terrain = centerCol[height - 1 - y] || TERRAIN.WATER;
+        }
+      } else if (x < centerX) {
+        // Left half: use generated data
+        terrain = leftHalf[y][x] !== undefined ? leftHalf[y][x] : TERRAIN.WATER;
       } else {
-        // Mirror: point at (x, y) mirrors to (width-1-x, height-1-y)
+        // Right half: 180° rotation from left half
         const mirrorX = width - 1 - x;
         const mirrorY = height - 1 - y;
-        if (mirrorX >= 0 && mirrorX < halfWidth && mirrorY >= 0 && mirrorY < height) {
-          terrain = leftHalf[mirrorY][mirrorX];
-        } else {
-          terrain = TERRAIN.WATER;
-        }
+        terrain =
+          leftHalf[mirrorY] && leftHalf[mirrorY][mirrorX] !== undefined
+            ? leftHalf[mirrorY][mirrorX]
+            : TERRAIN.WATER;
       }
 
-      tiles.push({
-        x,
-        y,
-        type: terrain,
-        owner: null,
-      });
+      tiles.push({ x, y, type: terrain, owner: null });
     }
   }
 
@@ -121,26 +214,18 @@ function generateMap(width, height, seed = null) {
   setStartingTerritory(player0StartX, startY, 0);
   setStartingTerritory(player1StartX, startY, 1);
 
-  // Create starting cities
   const cities = [
     { x: player0StartX, y: startY, owner: 0 },
     { x: player1StartX, y: startY, owner: 1 },
   ];
 
-  // Create monument
   const monument = {
     x: centerX,
     y: centerY,
     controlledBy: null,
   };
 
-  return {
-    width,
-    height,
-    tiles,
-    cities,
-    monument,
-  };
+  return { width, height, tiles, cities, monument };
 }
 
 /**

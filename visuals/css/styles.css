@@ -2,13 +2,13 @@
 
 :root {
   /* Teams */
-  --team-0: #0071e3;
-  --team-0-light: #4da3ff;
-  --team-0-bg: rgba(0, 113, 227, 0.15);
+  --team-0: #00ccaa;
+  --team-0-light: #33ddc0;
+  --team-0-bg: rgba(0, 204, 170, 0.15);
 
-  --team-1: #ff9f0a;
-  --team-1-light: #ffbf4d;
-  --team-1-bg: rgba(255, 159, 10, 0.15);
+  --team-1: #e0e0e0;
+  --team-1-light: #ffffff;
+  --team-1-bg: rgba(255, 255, 255, 0.12);
 
   /* Terrain (spec: FIELD, MOUNTAIN, WATER, MONUMENT) */
   --field: #90b060;
@@ -18,9 +18,9 @@
 
   /* UI */
   --bg-light: #f5f5f7;
-  --bg-dark: #1c1c1e;
+  --bg-dark: #0a0a0a;
   --card-light: rgba(255, 255, 255, 0.85);
-  --card-dark: rgba(44, 44, 46, 0.85);
+  --card-dark: rgba(18, 18, 18, 0.9);
 
   /* Status */
   --success: #34c759;
@@ -345,12 +345,12 @@ body {
 }
 
 select.input-field {
-  background-color: #1e293b;
+  background-color: #121212;
   color: #e2e8f0;
 }
 
 select.input-field option {
-  background-color: #1e293b;
+  background-color: #121212;
   color: #e2e8f0;
 }
 
@@ -1199,12 +1199,12 @@ body:has(.slide-panel-right.open) #panel-inspector.visible {
 }
 
 .team-badge.team-0 {
-  background: rgba(0, 113, 227, 0.2);
+  background: rgba(0, 204, 170, 0.2);
   color: var(--team-0);
 }
 
 .team-badge.team-1 {
-  background: rgba(220, 38, 38, 0.2);
+  background: rgba(255, 255, 255, 0.15);
   color: var(--team-1);
 }
 
