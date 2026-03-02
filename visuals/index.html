@@ -444,7 +444,7 @@
                 />
               </div>
               <button
-                class="action-btn primary w-full justify-center text-amber-600 dark:text-amber-400"
+                class="action-btn primary w-full justify-center"
                 onclick="App.connectAsOversight()"
               >
                 <i data-lucide="eye" class="w-4 h-4"></i>
@@ -831,8 +831,9 @@
     <script src="js/app.js"></script>
 
     <!-- Branding -->
-    <div id="branding" class="fixed bottom-4 left-4 select-none pointer-events-none z-10">
+    <div id="branding" class="fixed bottom-4 left-4 z-10">
       <div
+        class="select-none"
         style="
           font-family: 'Courier New', monospace;
           font-weight: 700;
@@ -844,6 +845,7 @@
         AIBG <span style="color: #ffffff">X</span>
       </div>
       <div
+        class="select-none"
         style="
           font-family: 'Courier New', monospace;
           font-size: 9px;
@@ -854,6 +856,23 @@
       >
         CIVILISATION CLASH
       </div>
+      <a
+        href="/docs/index.html"
+        target="_blank"
+        rel="noopener"
+        style="
+          font-family: 'Courier New', monospace;
+          font-size: 9px;
+          letter-spacing: 0.15em;
+          color: rgba(0, 204, 170, 0.7);
+          text-decoration: none;
+          margin-top: 4px;
+          display: inline-block;
+        "
+        onmouseover="this.style.color='#00ccaa'"
+        onmouseout="this.style.color='rgba(0, 204, 170, 0.5)'"
+        >DOCS &#8599;</a
+      >
     </div>
   </body>
 </html>

@@ -95,9 +95,9 @@ function processArcherPhase(state, events) {
   const multiplier = getScoreMultiplier(state.turn);
 
   for (const archer of archers) {
-    // Find enemies within range 2
+    // Find living enemies within range 2
     const enemies = state.units.filter((u) => {
-      if (u.owner === archer.owner) return false;
+      if (u.owner === archer.owner || u.hp <= 0) return false;
       const dist = chebyshevDistance(archer.x, archer.y, u.x, u.y);
       return dist >= 1 && dist <= UNIT_STATS[UNIT_TYPES.ARCHER].rangedRange;
     });

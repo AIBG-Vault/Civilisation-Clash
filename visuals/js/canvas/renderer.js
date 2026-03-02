@@ -357,13 +357,6 @@ const Renderer = {
    */
   setGameState(state) {
     const firstLoad = !this.gameState;
-    const oldState = this.gameState;
-
-    // Detect HP loss → spawn blood effects
-    if (oldState && oldState.units && state && state.units) {
-      this._detectDamage(oldState.units, state.units);
-    }
-
     this.gameState = state;
     console.log(
       '[Renderer] setGameState called, state:',
@@ -381,19 +374,33 @@ const Renderer = {
   },
 
   /**
-   * Compare old and new units — spawn blood effects only for units that lost HP at the same position
+   * Spawn blood effects from turn events (COMBAT and DEATH).
    */
-  _detectDamage(oldUnits, newUnits) {
-    // Index new units by position
-    const newByPos = {};
-    for (const u of newUnits) newByPos[`${u.x},${u.y}`] = u;
-
-    for (const old of oldUnits) {
-      const key = `${old.x},${old.y}`;
-      const cur = newByPos[key];
-      // Only trigger blood when the same unit (same pos, owner, type) has lower HP
-      if (cur && cur.type === old.type && cur.owner === old.owner && cur.hp < old.hp) {
-        this._spawnBloodEffect(old.x, old.y, old.hp - cur.hp);
+  applyTurnEvents(events) {
+    if (!events) return;
+    for (const evt of events) {
+      if (evt.type === 'COMBAT' && evt.data) {
+        const t = evt.data.target;
+        let x = t.x,
+          y = t.y;
+        // Archer shots fire before movement (phase 2). The target may have
+        // moved in phase 3, so look up its final position in the current state.
+        if (evt.data.phase === 'archer' && !evt.data.isKill && this.gameState) {
+          const final = this.gameState.units.find(
+            (u) =>
+              u.owner === t.owner &&
+              u.type === t.type &&
+              Math.abs(u.x - t.x) <= 2 &&
+              Math.abs(u.y - t.y) <= 2
+          );
+          if (final) {
+            x = final.x;
+            y = final.y;
+          }
+        }
+        this._spawnBloodEffect(x, y, evt.data.damage);
+      } else if (evt.type === 'DEATH' && evt.data) {
+        this._spawnSkullEffect(evt.data.unit.x, evt.data.unit.y);
       }
     }
   },
@@ -421,6 +428,41 @@ const Renderer = {
         size: 2 + Math.floor(Math.random() * 2), // 2-3 px
       });
     }
+  },
+
+  /**
+   * Spawn a skull icon that floats up and fades
+   */
+  _spawnSkullEffect(gx, gy) {
+    this._damageEffects.push({
+      gx,
+      gy,
+      ox: 0,
+      oy: 0,
+      vx: 0,
+      vy: -18,
+      gravity: 0,
+      spawn: Date.now(),
+      life: 1200,
+      size: 0,
+      skull: true,
+    });
+  },
+
+  /**
+   * Draw a tiny pixel-art skull at the given screen position and size
+   */
+  _drawSkull(ctx, cx, cy, s) {
+    // Cranium (5x4 top)
+    ctx.fillRect(cx - 2 * s, cy - 4 * s, 5 * s, 4 * s);
+    // Jaw (3x2 bottom)
+    ctx.fillRect(cx - 1 * s, cy, 3 * s, 2 * s);
+    // Eye holes (dark)
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(cx - 1 * s, cy - 3 * s, s, s);
+    ctx.fillRect(cx + 1 * s, cy - 3 * s, s, s);
+    // Nose
+    ctx.fillRect(cx, cy - 1 * s, s, s);
   },
 
   /**
@@ -453,16 +495,27 @@ const Renderer = {
       const lifeFrac = age / e.life;
       const alpha = lifeFrac > 0.7 ? 1 - (lifeFrac - 0.7) / 0.3 : 1;
 
-      // Draw pixel blood drop (small filled rect for pixel art look)
-      const sz = e.size * s;
       ctx.globalAlpha = alpha;
-      ctx.fillStyle = '#cc1111';
-      ctx.fillRect(Math.round(px - sz / 2), Math.round(py - sz / 2), Math.ceil(sz), Math.ceil(sz));
-      // Darker core pixel
-      if (e.size > 2) {
-        ctx.fillStyle = '#880000';
-        const core = Math.ceil(s);
-        ctx.fillRect(Math.round(px - core / 2), Math.round(py - core / 2), core, core);
+      if (e.skull) {
+        // Floating skull icon
+        const ps = Math.ceil(s * 1.2); // pixel scale
+        ctx.fillStyle = '#dddddd';
+        this._drawSkull(ctx, Math.round(px), Math.round(py), ps);
+      } else {
+        // Blood drop particle
+        const sz = e.size * s;
+        ctx.fillStyle = '#cc1111';
+        ctx.fillRect(
+          Math.round(px - sz / 2),
+          Math.round(py - sz / 2),
+          Math.ceil(sz),
+          Math.ceil(sz)
+        );
+        if (e.size > 2) {
+          ctx.fillStyle = '#880000';
+          const core = Math.ceil(s);
+          ctx.fillRect(Math.round(px - core / 2), Math.round(py - core / 2), core, core);
+        }
       }
       ctx.globalAlpha = 1;
     }

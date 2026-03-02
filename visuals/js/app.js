@@ -632,6 +632,9 @@ const App = {
     if (data.state) {
       this.gameState = data.state;
 
+      // Attach events to state for replay
+      if (data.events) data.state._events = data.events;
+
       // Add to replay (deduplicates by turn number)
       if (typeof Replay !== 'undefined') {
         Replay.addState(data.state);
@@ -640,6 +643,7 @@ const App = {
       // Only update renderer if viewing live
       if (typeof Replay === 'undefined' || Replay.isViewingLive()) {
         Renderer.setGameState(data.state);
+        if (data.events) Renderer.applyTurnEvents(data.events);
         this.updateUI();
       }
     }
@@ -1231,6 +1235,7 @@ const Replay = {
     if (state) {
       App.gameState = state;
       Renderer.setGameState(state);
+      if (state._events) Renderer.applyTurnEvents(state._events);
       App.updateUI();
     }
   },

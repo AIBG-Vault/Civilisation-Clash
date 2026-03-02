@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.argv[2] || 3000;
-const DIR = __dirname;
+const ROOT = path.join(__dirname, '..'); // project root (serves visuals/ and docs/)
 
 const MIME = {
   '.html': 'text/html',
@@ -17,14 +17,19 @@ const MIME = {
   '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
+  '.md': 'text/markdown',
 };
 
 http
   .createServer((req, res) => {
     let url = req.url.split('?')[0];
-    if (url === '/') url = '/index.html';
-    const file = path.join(DIR, url);
-    if (!file.startsWith(DIR)) {
+    if (url === '/') {
+      res.writeHead(302, { Location: '/visuals/index.html' });
+      res.end();
+      return;
+    }
+    const file = path.join(ROOT, url);
+    if (!file.startsWith(ROOT)) {
       res.writeHead(403);
       res.end();
       return;
@@ -41,4 +46,8 @@ http
       res.end(data);
     });
   })
-  .listen(PORT, () => console.log(`Frontend: http://localhost:${PORT}`));
+  .listen(PORT, () => {
+    console.log(`Server:  http://localhost:${PORT}`);
+    console.log(`Game:    http://localhost:${PORT}/visuals/index.html`);
+    console.log(`Docs:    http://localhost:${PORT}/docs/index.html`);
+  });
