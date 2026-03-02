@@ -103,9 +103,7 @@ const ECONOMY = {
 const SCORING = {
   DAMAGE_DEALT: 5, // Score per damage dealt
   KILL_BONUS: 7, // Score when killing an enemy unit (instead of 5)
-  MONUMENT_EARLY: 5, // Turns 1-100
-  MONUMENT_MID: 10, // Turns 101-150
-  MONUMENT_LATE: 15, // Turns 151-200
+  MONUMENT_PER_CITY: 3, // Monument awards this much score per city on the map
 };
 
 // Score multipliers (for combat score only, not monument)

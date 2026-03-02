@@ -806,7 +806,7 @@ const App = {
 
     // Update turn info
     // Get monument owner name from the displayed state
-    const monumentOwnerId = state.monument ? state.monument.controlled_by : null;
+    const monumentOwnerId = state.monument ? state.monument.controlledBy : null;
     let monumentOwnerName = null;
     if (monumentOwnerId !== null && state.players) {
       const monumentPlayer = state.players.find((p) => p.id === monumentOwnerId);
@@ -917,7 +917,7 @@ const App = {
       monument: {
         x: 7,
         y: 5,
-        controlled_by: 0,
+        controlledBy: 0,
       },
     };
 

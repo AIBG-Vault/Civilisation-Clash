@@ -3,13 +3,7 @@
  * Main entry point and exports
  */
 
-const {
-  processTurn,
-  cloneState,
-  getScoreMultiplier,
-  getMonumentScore,
-  calculateIncome,
-} = require('./processor');
+const { processTurn, cloneState, getScoreMultiplier, calculateIncome } = require('./processor');
 const { generateMap, createInitialState, validateMap } = require('./map-generator');
 const {
   validateAction,
@@ -42,7 +36,6 @@ module.exports = {
   validateMap,
   cloneState,
   getScoreMultiplier,
-  getMonumentScore,
   calculateIncome,
 
   // Helper functions

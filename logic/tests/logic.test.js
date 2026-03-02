@@ -18,7 +18,6 @@ const {
   manhattanDistance,
   isInZoC,
   getScoreMultiplier,
-  getMonumentScore,
   calculateIncome,
   MODES,
   TERRAIN,
@@ -710,7 +709,7 @@ describe('Turn processing', () => {
   });
 
   describe('Scoring phase', () => {
-    it('awards monument score to controller', () => {
+    it('awards monument control to adjacent unit owner', () => {
       state.units.push({
         x: 5,
         y: 4,
@@ -726,9 +725,6 @@ describe('Turn processing', () => {
 
       const monumentEvent = info.turnEvents.find((e) => e.type === 'MONUMENT_CONTROL');
       assert.ok(monumentEvent);
-      assert.strictEqual(monumentEvent.data.scoreAwarded, SCORING.MONUMENT_EARLY);
-
-      assert.ok(newState.players[0].score >= SCORING.MONUMENT_EARLY);
     });
   });
 
@@ -831,19 +827,33 @@ describe('Score multipliers', () => {
 });
 
 describe('Monument score', () => {
-  it('returns 5 for early turns', () => {
-    assert.strictEqual(getMonumentScore(1), 5);
-    assert.strictEqual(getMonumentScore(100), 5);
+  it('awards score based on total cities in the game', () => {
+    const state = createTestState();
+    // Place soldier adjacent to monument
+    state.units = [{ x: 5, y: 4, owner: 0, type: UNIT_TYPES.SOLDIER, hp: 3, canMove: true }];
+    // Test state has 2 cities by default
+    assert.strictEqual(state.cities.length, 2);
+
+    const { newState, info } = processTurn(state, { player0: [], player1: [] });
+
+    assert.strictEqual(newState.monument.controlledBy, 0);
+    const monumentEvent = info.turnEvents.find((e) => e.type === 'MONUMENT_CONTROL');
+    assert.ok(monumentEvent);
+    assert.strictEqual(monumentEvent.data.scoreAwarded, 2 * SCORING.MONUMENT_PER_CITY);
   });
 
-  it('returns 10 for mid turns', () => {
-    assert.strictEqual(getMonumentScore(101), 10);
-    assert.strictEqual(getMonumentScore(150), 10);
-  });
+  it('scales with more cities', () => {
+    const state = createTestState();
+    state.units = [{ x: 5, y: 4, owner: 0, type: UNIT_TYPES.SOLDIER, hp: 3, canMove: true }];
+    // Add extra cities
+    state.cities.push({ x: 3, y: 3, owner: 0 });
+    state.cities.push({ x: 7, y: 7, owner: 1 });
 
-  it('returns 15 for late turns', () => {
-    assert.strictEqual(getMonumentScore(151), 15);
-    assert.strictEqual(getMonumentScore(200), 15);
+    const { newState, info } = processTurn(state, { player0: [], player1: [] });
+
+    const monumentEvent = info.turnEvents.find((e) => e.type === 'MONUMENT_CONTROL');
+    assert.ok(monumentEvent);
+    assert.strictEqual(monumentEvent.data.scoreAwarded, 4 * SCORING.MONUMENT_PER_CITY);
   });
 });
 

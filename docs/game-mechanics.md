@@ -31,15 +31,7 @@ The monument is impassable. Control is determined by adjacent units (Chebyshev d
 - **Both teams adjacent**: control goes to `turn % 2` (team 0 on even, team 1 on odd)
 - **Nobody adjacent**: previous controller keeps it
 
-Monument score per turn:
-
-| Turns    | Score |
-| -------- | ----- |
-| 1--100   | 5     |
-| 101--150 | 10    |
-| 151--200 | 15    |
-
-Monument scoring is not affected by combat multipliers.
+The monument controller receives **3 score per city on the map** each turn. More cities = higher monument value.
 
 ## Distance
 
@@ -151,7 +143,7 @@ Spawned at your cities. City tile must be unoccupied. New units cannot move on t
 | Own Soldier dies | 10                                  | Owner      |
 | Own Archer dies  | 12                                  | Owner      |
 | Own Raider dies  | 3                                   | Owner      |
-| Monument control | 5 / 10 / 15 per turn                | Controller |
+| Monument control | 3 per city on the map, per turn     | Controller |
 
 ### Combat Multipliers
 
@@ -163,7 +155,7 @@ Combat score (damage, kills, death bonuses) scales over time:
 | 101--150 | x1.5       |
 | 151--200 | x2         |
 
-Monument scoring is not multiplied.
+Monument scoring is not affected by combat multipliers.
 
 ### Victory Conditions
 

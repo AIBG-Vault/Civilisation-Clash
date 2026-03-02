@@ -45,12 +45,10 @@ function getScoreMultiplier(turn) {
 }
 
 /**
- * Get monument score based on turn
+ * Get monument score based on total cities in the game
  */
-function getMonumentScore(turn) {
-  if (turn >= 151) return SCORING.MONUMENT_LATE;
-  if (turn >= 101) return SCORING.MONUMENT_MID;
-  return SCORING.MONUMENT_EARLY;
+function getMonumentScore(state) {
+  return state.cities.length * SCORING.MONUMENT_PER_CITY;
 }
 
 /**
@@ -412,9 +410,9 @@ function processScoringPhase(state, events) {
   }
   // If no one adjacent, keep previous control
 
-  // Award monument score
+  // Award monument score based on total cities in the game
   if (state.monument.controlledBy !== null) {
-    const monumentScore = getMonumentScore(state.turn);
+    const monumentScore = getMonumentScore(state);
     const controller = state.players.find((p) => p.id === state.monument.controlledBy);
     controller.score += monumentScore;
 
@@ -534,6 +532,5 @@ module.exports = {
   processTurn,
   cloneState,
   getScoreMultiplier,
-  getMonumentScore,
   calculateIncome,
 };

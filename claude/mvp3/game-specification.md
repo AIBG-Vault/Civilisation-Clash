@@ -37,7 +37,7 @@ Civilization Clash is a turn-based strategy game where two players build armies,
 - **Sources**:
   - Dealing damage: 5 SCORE per damage dealt, 7 if OTHER UNIT killed.
   - Unit death (when YOUR unit dies): Soldier 10, Archer 12, Raider 3
-  - Monument control: 5/10/15 SCORE per turn (scales with game progress)
+  - Monument control: 3 SCORE per city on the map, per turn
 - **Multipliers**: Combat SCORE x1.5 after turn 100, x2 after turn 150 (monument unaffected)
 
 ## 4. Map
@@ -65,10 +65,7 @@ Civilization Clash is a turn-based strategy game where two players build armies,
 - **Impassable**: Units cannot enter the monument tile
 - **Tagging**: Units adjacent to monument can "tag" it for their team
 - **Control Resolution**: If units from both teams are adjacent, control is assigned randomly to one team
-- **Benefit**: Controller receives SCORE per turn:
-  - Turns 1-100: 5 SCORE/turn
-  - Turns 101-150: 10 SCORE/turn
-  - Turns 151-200: 15 SCORE/turn
+- **Benefit**: Controller receives 3 SCORE per city on the map each turn
 
 ## 5. Distance and Adjacency
 

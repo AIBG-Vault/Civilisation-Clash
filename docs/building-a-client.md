@@ -68,7 +68,7 @@ Response:
 {
   "type": "AUTH_SUCCESS",
   "teamId": 0,
-  "assignedName": "MyBot",
+  "name": "MyBot",
   "isSpectator": false
 }
 ```
@@ -199,19 +199,19 @@ Emitted when a soldier captures an enemy city:
 
 #### MONUMENT_CONTROL
 
-Emitted every turn during the scoring phase:
+Emitted every turn during the scoring phase. The controller receives 3 score per city on the map.
 
 ```json
 {
   "type": "MONUMENT_CONTROL",
   "data": {
     "controlledBy": 0,
-    "scoreAwarded": 5
+    "scoreAwarded": 6
   }
 }
 ```
 
-`controlledBy` is `0`, `1`, or `null`. `scoreAwarded` is 0 if uncontrolled.
+`controlledBy` is `0`, `1`, or `null`. `scoreAwarded` is `totalCities * 3`.
 
 ### GAME_OVER
 

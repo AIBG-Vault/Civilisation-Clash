@@ -163,9 +163,9 @@ ws.send(JSON.stringify({ type: 'LOAD_SAVE', saveId: 'some-save-id' }));
 | `createInitialState`  | `(options)` -> `state`                           | New game                    |
 | `processTurn`         | `(state, actions)` -> `{newState, errors, info}` | Process one turn            |
 | `validateAction`      | `(state, teamId, action)` -> `{valid, reason}`   | Check one action            |
-| `generateMap`         | `(width, height, mode)` -> `map`                 | Generate map                |
+| `generateMap`         | `(width, height, seed)` -> `map`                 | Generate map                |
 | `getTilesAtDistance1` | `(x, y)` -> `[{x, y}]`                           | 8 adjacent positions        |
-| `getTilesAtDistance2` | `(x, y)` -> `[{x, y}]`                           | 24 positions within range 2 |
+| `getTilesAtDistance2` | `(x, y)` -> `[{x, y}]`                           | 20 positions within range 2 |
 | `chebyshevDistance`   | `(x1, y1, x2, y2)` -> `number`                   | `max(\|dx\|, \|dy\|)`       |
 | `manhattanDistance`   | `(x1, y1, x2, y2)` -> `number`                   | `\|dx\| + \|dy\|`           |
 | `isInZoC`             | `(state, unit)` -> `boolean`                     | In enemy soldier ZoC?       |
@@ -186,6 +186,6 @@ ws.send(JSON.stringify({ type: 'LOAD_SAVE', saveId: 'some-save-id' }));
 
 **Economy**: FIELD_INCOME: 0.5, CITY_INCOME: 5, EXPAND_COST: 5, CITY_COST: 80
 
-**Scoring**: DAMAGE_DEALT: 5, KILL_BONUS: 7, MONUMENT_EARLY: 5, MONUMENT_MID: 10, MONUMENT_LATE: 15
+**Scoring**: DAMAGE_DEALT: 5, KILL_BONUS: 7, MONUMENT_PER_CITY: 3
 
 **Multipliers**: Turns 1-100: x1, 101-150: x1.5, 151-200: x2 (combat only, not monument)

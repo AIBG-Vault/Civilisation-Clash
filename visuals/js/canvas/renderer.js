@@ -793,7 +793,7 @@ const Renderer = {
     if (!this.gameState || !this.gameState.monument) return;
 
     const { monument } = this.gameState;
-    Units.drawMonument(ctx, monument.x, monument.y, monument.controlled_by);
+    Units.drawMonument(ctx, monument.x, monument.y, monument.controlledBy);
   },
 
   /**
