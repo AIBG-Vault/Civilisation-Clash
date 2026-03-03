@@ -164,7 +164,28 @@ class GameManager {
       return { success: false, reason: 'Actions already submitted for this turn' };
     }
 
-    const validation = actions.map((action) => validateAction(this.state, teamId, action));
+    // Validate actions, tracking expand territory claims so chains work
+    const expandClaims = new Set();
+    const validation = actions.map((action) => {
+      if (action.action === 'EXPAND_TERRITORY') {
+        // Temporarily mark previously queued expands as owned for adjacency check
+        const claimedTiles = [];
+        for (const key of expandClaims) {
+          const [cx, cy] = key.split(',').map(Number);
+          const tile = this.state.map.tiles.find((t) => t.x === cx && t.y === cy);
+          if (tile && tile.owner === null) {
+            tile.owner = teamId;
+            claimedTiles.push(tile);
+          }
+        }
+        const result = validateAction(this.state, teamId, action);
+        // Restore tiles
+        for (const tile of claimedTiles) tile.owner = null;
+        if (result.valid) expandClaims.add(`${action.x},${action.y}`);
+        return result;
+      }
+      return validateAction(this.state, teamId, action);
+    });
     const validActions = actions.filter((_, i) => validation[i].valid);
     this.pendingActions.set(teamId, validActions);
 

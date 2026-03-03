@@ -19,7 +19,7 @@ const MODE_SETTINGS = {
   [MODES.BLITZ]: {
     maxTurns: 50,
     mapWidth: 15,
-    mapHeight: 10,
+    mapHeight: 11,
     startingGold: 50,
   },
 };

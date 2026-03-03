@@ -4,7 +4,7 @@
 
 |                   | Standard | Blitz   |
 | ----------------- | -------- | ------- |
-| **Map Size**      | 25 x 15  | 15 x 10 |
+| **Map Size**      | 25 x 15  | 15 x 11 |
 | **Max Turns**     | 200      | 50      |
 | **Starting Gold** | 20       | 50      |
 
@@ -28,7 +28,7 @@ The map is a symmetrical island surrounded by water, with mountains scattered ac
 The monument is impassable. Control is determined by adjacent units (Chebyshev distance 1):
 
 - **One team adjacent**: that team controls it
-- **Both teams adjacent**: control goes to `turn % 2` (team 0 on even, team 1 on odd)
+- **Both teams adjacent**: control assigned randomly (50/50)
 - **Nobody adjacent**: previous controller keeps it
 
 The monument controller receives **3 score per city on the map** each turn. More cities = higher monument value.
@@ -85,7 +85,7 @@ Projects Zone of Control at range 2 -- enemy archers and raiders inside it canno
 
 Shoots one enemy per turn within Chebyshev distance 2. Fires in the Archer phase (before movement). Cannot move on turns it shoots. Does not melee. Vulnerable to ZoC.
 
-Target selection: nearest by Manhattan distance, then lowest HP, then leftmost (lowest x), then topmost (lowest y).
+Target selection: nearest by Manhattan distance, then lowest HP, then random.
 
 <div class="gif-placeholder" data-name="archer-targeting">Archer target selection</div>
 

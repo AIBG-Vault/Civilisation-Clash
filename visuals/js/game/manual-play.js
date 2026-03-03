@@ -709,7 +709,11 @@ const ManualPlay = {
 
     // Mode-specific overlays
     if (this.mode === 'expand') {
-      overlays.expandableTiles = Pathfinding.getExpandableTiles(state, this.teamId);
+      // Include queued expand actions so chained expansions show correctly
+      const queuedExpands = this.actionQueue
+        .filter((a) => a.action === 'EXPAND_TERRITORY')
+        .map((a) => ({ x: a.x, y: a.y }));
+      overlays.expandableTiles = Pathfinding.getExpandableTiles(state, this.teamId, queuedExpands);
     } else if (this.mode === 'build_city') {
       overlays.validCityLocations = Pathfinding.getValidCityLocations(state, this.teamId);
     }

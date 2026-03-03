@@ -247,7 +247,7 @@ function getBestMove(state, unit) {
 
   for (const move of moves) {
     const score = scoreMoveTarget(state, unit, move.to_x, move.to_y);
-    if (score > bestScore) {
+    if (score > bestScore || (score === bestScore && Math.random() < 0.5)) {
       bestScore = score;
       bestMove = move;
     }

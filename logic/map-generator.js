@@ -13,6 +13,10 @@ const { TERRAIN, MODES, MODE_SETTINGS } = require('./constants');
  * @returns {Object} Map object with tiles, cities, and monument
  */
 function generateMap(width, height, seed = null) {
+  // Enforce odd dimensions so the center tile is the true rotational center
+  if (width % 2 === 0) width++;
+  if (height % 2 === 0) height++;
+
   // Seeded PRNG for reproducibility
   let randomState = seed !== null ? seed : Date.now();
   const random = () => {

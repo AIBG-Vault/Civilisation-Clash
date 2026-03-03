@@ -222,15 +222,23 @@ const Pathfinding = {
   /**
    * Get all neutral FIELD tiles adjacent to a player's territory.
    * These are valid targets for EXPAND_TERRITORY.
+   * queuedExpands: optional array of {x,y} tiles already queued for expansion this turn.
    */
-  getExpandableTiles(state, playerId) {
+  getExpandableTiles(state, playerId, queuedExpands) {
     const expandable = new Set();
+    const queuedSet = new Set();
     const w = state.map.width;
     const h = state.map.height;
 
-    // Find all owned tiles, then check their neighbors
+    if (queuedExpands) {
+      for (const q of queuedExpands) queuedSet.add(`${q.x},${q.y}`);
+    }
+
+    // Find all owned tiles + queued expansions, then check their neighbors
     for (const tile of state.map.tiles) {
-      if (tile.owner !== playerId) continue;
+      const isOwned = tile.owner === playerId;
+      const isQueued = queuedSet.has(`${tile.x},${tile.y}`);
+      if (!isOwned && !isQueued) continue;
 
       for (const { dx, dy } of this.OFFSETS) {
         const nx = tile.x + dx;
@@ -238,7 +246,12 @@ const Pathfinding = {
         if (!this._inBounds(nx, ny, w, h)) continue;
 
         const neighbor = state.map.tiles.find((t) => t.x === nx && t.y === ny);
-        if (neighbor && neighbor.owner === null && neighbor.type === 'FIELD') {
+        if (
+          neighbor &&
+          neighbor.owner === null &&
+          neighbor.type === 'FIELD' &&
+          !queuedSet.has(`${nx},${ny}`)
+        ) {
           expandable.add(`${nx},${ny}`);
         }
       }

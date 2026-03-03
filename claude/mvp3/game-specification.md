@@ -44,7 +44,7 @@ Civilization Clash is a turn-based strategy game where two players build armies,
 
 ### 4.1 Dimensions
 - **Standard**: 25x15 tiles
-- **Blitz**: 15x10 tiles
+- **Blitz**: 15x11 tiles
 
 ### 4.2 Layout
 - Symmetrical (randomly generated) island surrounded by water
@@ -149,7 +149,7 @@ Total: 8 (distance 1) + 12 (distance 2 only) = 20 tiles
 Attacks up to 2 tile distance.
 2. Select nearest enemy (Manhattan distance)
 3. If tied, select lowest HP
-4. If still tied, select arbitrarily (deterministic)
+4. If still tied, select randomly
 
 ## 8. Territory
 

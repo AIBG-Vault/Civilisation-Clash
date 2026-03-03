@@ -181,7 +181,7 @@ describe('Initial state creation', () => {
 
     assert.strictEqual(state.maxTurns, 50);
     assert.strictEqual(state.map.width, 15);
-    assert.strictEqual(state.map.height, 10);
+    assert.strictEqual(state.map.height, 11);
     assert.strictEqual(state.players[0].gold, 50);
     assert.strictEqual(state.players[1].gold, 50);
   });

@@ -17,7 +17,14 @@
 const args = process.argv.slice(2);
 const agentType = args[0] || 'dumb';
 const preferredTeam = parseInt(args[1]) || 0;
-const playerName = args[2] || `${agentType === 'smart' ? 'Smart' : 'Dumb'}Agent`;
+const AGENT_NAMES = {
+  smart: 'Smart',
+  smarter: 'Smart',
+  smart2: 'Smart2',
+  econ: 'Econ',
+  dumb: 'Dumb',
+};
+const playerName = args[2] || `${AGENT_NAMES[agentType] || 'Dumb'}Agent`;
 
 // Load the appropriate agent
 let agent;
@@ -28,6 +35,9 @@ try {
   } else if (agentType === 'smart2') {
     agent = require('./smart2Agent');
     console.log('Loaded smart2 agent strategy (unit-focused)');
+  } else if (agentType === 'econ') {
+    agent = require('./econAgent');
+    console.log('Loaded econ agent strategy (economy-first)');
   } else {
     agent = require('./dumbAgent');
     console.log('Loaded dumb agent strategy');

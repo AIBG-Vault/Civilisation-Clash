@@ -8,12 +8,14 @@
  *   dumb    - Random valid actions
  *   smart   - Strategic with limits (balanced)
  *   smart2  - Aggressive unit-focused (spends all gold)
+ *   econ    - Economy-first, then late assault
  *
  * Examples:
  *   node run-match.js dumb dumb      # Two dumb agents
  *   node run-match.js dumb smart     # Dumb vs Smart
  *   node run-match.js smart smart    # Two smart agents
  *   node run-match.js smart2 smart   # Smart2 vs Smart
+ *   node run-match.js econ smart2    # Econ vs Smart2
  */
 
 const { spawn } = require('child_process');

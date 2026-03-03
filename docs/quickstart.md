@@ -16,7 +16,7 @@ Defaults: blitz mode, 2s turn timeout.
 
 | Flag              | Default | Description                                        |
 | ----------------- | ------- | -------------------------------------------------- |
-| `--mode=standard` | `blitz` | Standard: 25x15, 200 turns. Blitz: 15x10, 50 turns |
+| `--mode=standard` | `blitz` | Standard: 25x15, 200 turns. Blitz: 15x11, 50 turns |
 | `--timeout=5000`  | `2000`  | Turn timeout in ms                                 |
 | `--protected`     | off     | Per-team passwords, no client setting overrides    |
 | `--max-saves=50`  | `20`    | Max saved replays                                  |

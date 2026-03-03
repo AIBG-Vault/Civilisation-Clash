@@ -26,6 +26,7 @@ const {
   manhattanDistance,
   getTilesAtDistance1,
   getTilesAtDistance2,
+  isAdjacentToOwnTerritory,
 } = require('./validation');
 
 /**
@@ -90,6 +91,11 @@ function processIncomePhase(state, events) {
  */
 function processArcherPhase(state, events) {
   const archers = state.units.filter((u) => u.type === UNIT_TYPES.ARCHER);
+  // Shuffle archers so neither team consistently fires first
+  for (let i = archers.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [archers[i], archers[j]] = [archers[j], archers[i]];
+  }
   const multiplier = getScoreMultiplier(state.turn);
 
   for (const archer of archers) {
@@ -102,21 +108,20 @@ function processArcherPhase(state, events) {
 
     if (enemies.length === 0) continue;
 
-    // Select target: nearest (Manhattan distance), then lowest HP
+    // Select target: nearest (Manhattan distance), then lowest HP, then random
     enemies.sort((a, b) => {
       const distA = manhattanDistance(archer.x, archer.y, a.x, a.y);
       const distB = manhattanDistance(archer.x, archer.y, b.x, b.y);
       if (distA !== distB) return distA - distB;
       if (a.hp !== b.hp) return a.hp - b.hp;
-      // Deterministic tiebreaker: by position
-      if (a.x !== b.x) return a.x - b.x;
-      return a.y - b.y;
+      // Random tiebreaker to avoid spatial bias
+      return Math.random() - 0.5;
     });
 
     const target = enemies[0];
     const damage = UNIT_STATS[UNIT_TYPES.ARCHER].damage;
 
-    // Apply damage
+    // Apply damage immediately (sequential — allows archers to spread damage)
     target.hp -= damage;
 
     // Mark archer as unable to move
@@ -164,8 +169,8 @@ function processArcherPhase(state, events) {
  * Phase 3: Movement - Process move actions
  */
 function processMovementPhase(state, actions, events) {
-  // Collect all valid move actions
-  const moves = [];
+  // Collect all valid move actions per player
+  const moveQueues = [[], []];
 
   for (const playerId of [0, 1]) {
     const playerActions = actions[`player${playerId}`] || [];
@@ -183,7 +188,21 @@ function processMovementPhase(state, actions, events) {
       // Check ZoC
       if (isInZoC(state, unit)) continue;
 
-      moves.push({ playerId, action, unit });
+      moveQueues[playerId].push({ playerId, action, unit });
+    }
+  }
+
+  // Interleave moves: alternate between players, random who goes first
+  const moves = [];
+  const first = Math.random() < 0.5 ? 0 : 1;
+  const second = 1 - first;
+  const mi = [0, 0];
+  while (mi[0] < moveQueues[0].length || mi[1] < moveQueues[1].length) {
+    for (const pid of [first, second]) {
+      if (mi[pid] < moveQueues[pid].length) {
+        moves.push(moveQueues[pid][mi[pid]]);
+        mi[pid]++;
+      }
     }
   }
 
@@ -314,64 +333,94 @@ function processCombatPhase(state, events) {
 }
 
 /**
+ * Process a single build/city/unit action for a player. Returns true if processed.
+ */
+function processSingleBuildAction(state, playerId, action) {
+  const player = state.players.find((p) => p.id === playerId);
+
+  const result = validateAction(state, playerId, action);
+  if (!result.valid) return false;
+
+  if (action.action === ACTIONS.BUILD_UNIT) {
+    const cost = UNIT_STATS[action.unit_type].cost;
+    if (player.gold < cost) return false;
+
+    const unitAtCity = state.units.find((u) => u.x === action.city_x && u.y === action.city_y);
+    if (unitAtCity) return false;
+
+    player.gold -= cost;
+    state.units.push({
+      x: action.city_x,
+      y: action.city_y,
+      owner: playerId,
+      type: action.unit_type,
+      hp: UNIT_STATS[action.unit_type].hp,
+      canMove: false,
+    });
+    return true;
+  } else if (action.action === ACTIONS.BUILD_CITY) {
+    if (player.gold < ECONOMY.CITY_COST) return false;
+
+    const unitAtPos = state.units.find((u) => u.x === action.x && u.y === action.y);
+    const cityAtPos = state.cities.find((c) => c.x === action.x && c.y === action.y);
+    if (unitAtPos || cityAtPos) return false;
+
+    player.gold -= ECONOMY.CITY_COST;
+    state.cities.push({ x: action.x, y: action.y, owner: playerId });
+    return true;
+  } else if (action.action === ACTIONS.EXPAND_TERRITORY) {
+    if (player.gold < ECONOMY.EXPAND_COST) return false;
+
+    const tile = state.map.tiles.find((t) => t.x === action.x && t.y === action.y);
+    if (!tile || tile.owner !== null) return false;
+    if (!isAdjacentToOwnTerritory(state, action.x, action.y, playerId)) return false;
+
+    player.gold -= ECONOMY.EXPAND_COST;
+    tile.owner = playerId;
+    return true;
+  }
+  return false;
+}
+
+/**
  * Phase 5: Build - Process builds and expansions
+ * Interleaves expand actions between players to prevent P0 bias.
  */
 function processBuildPhase(state, actions, events) {
+  const BUILD_ACTIONS = [ACTIONS.BUILD_UNIT, ACTIONS.BUILD_CITY, ACTIONS.EXPAND_TERRITORY];
+
+  // Separate expand actions from other build actions for each player
+  const buildQueues = [[], []];
+  const expandQueues = [[], []];
+
   for (const playerId of [0, 1]) {
-    const playerActions = actions[`player${playerId}`] || [];
-    const player = state.players.find((p) => p.id === playerId);
-
-    for (const action of playerActions) {
-      // Skip non-build actions
-      if (
-        ![ACTIONS.BUILD_UNIT, ACTIONS.BUILD_CITY, ACTIONS.EXPAND_TERRITORY].includes(action.action)
-      ) {
-        continue;
+    for (const action of actions[`player${playerId}`] || []) {
+      if (!BUILD_ACTIONS.includes(action.action)) continue;
+      if (action.action === ACTIONS.EXPAND_TERRITORY) {
+        expandQueues[playerId].push(action);
+      } else {
+        buildQueues[playerId].push(action);
       }
+    }
+  }
 
-      const result = validateAction(state, playerId, action);
-      if (!result.valid) continue;
+  // Process unit builds and city builds first (order doesn't matter — no contested tiles)
+  for (const playerId of [0, 1]) {
+    for (const action of buildQueues[playerId]) {
+      processSingleBuildAction(state, playerId, action);
+    }
+  }
 
-      if (action.action === ACTIONS.BUILD_UNIT) {
-        const cost = UNIT_STATS[action.unit_type].cost;
-        if (player.gold < cost) continue;
+  // Interleave expand actions: alternate between players, random who goes first
+  const first = Math.random() < 0.5 ? 0 : 1;
+  const second = 1 - first;
+  const indices = [0, 0];
 
-        // Check city not blocked
-        const unitAtCity = state.units.find((u) => u.x === action.city_x && u.y === action.city_y);
-        if (unitAtCity) continue;
-
-        // Deduct cost and create unit
-        player.gold -= cost;
-        state.units.push({
-          x: action.city_x,
-          y: action.city_y,
-          owner: playerId,
-          type: action.unit_type,
-          hp: UNIT_STATS[action.unit_type].hp,
-          canMove: false, // Units can't move on spawn turn
-        });
-      } else if (action.action === ACTIONS.BUILD_CITY) {
-        if (player.gold < ECONOMY.CITY_COST) continue;
-
-        // Check no unit or city at position
-        const unitAtPos = state.units.find((u) => u.x === action.x && u.y === action.y);
-        const cityAtPos = state.cities.find((c) => c.x === action.x && c.y === action.y);
-        if (unitAtPos || cityAtPos) continue;
-
-        player.gold -= ECONOMY.CITY_COST;
-        state.cities.push({
-          x: action.x,
-          y: action.y,
-          owner: playerId,
-        });
-      } else if (action.action === ACTIONS.EXPAND_TERRITORY) {
-        if (player.gold < ECONOMY.EXPAND_COST) continue;
-
-        const tile = state.map.tiles.find((t) => t.x === action.x && t.y === action.y);
-        if (!tile || tile.owner !== null) continue;
-
-        player.gold -= ECONOMY.EXPAND_COST;
-        tile.owner = playerId;
+  while (indices[0] < expandQueues[0].length || indices[1] < expandQueues[1].length) {
+    for (const pid of [first, second]) {
+      if (indices[pid] < expandQueues[pid].length) {
+        processSingleBuildAction(state, pid, expandQueues[pid][indices[pid]]);
+        indices[pid]++;
       }
     }
   }
@@ -401,8 +450,7 @@ function processScoringPhase(state, events) {
 
   if (team0Adjacent && team1Adjacent) {
     // Both teams adjacent - random control
-    // Use deterministic "random" based on turn number
-    state.monument.controlledBy = state.turn % 2;
+    state.monument.controlledBy = Math.random() < 0.5 ? 0 : 1;
   } else if (team0Adjacent) {
     state.monument.controlledBy = 0;
   } else if (team1Adjacent) {
