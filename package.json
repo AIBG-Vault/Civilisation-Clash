@@ -7,5 +7,12 @@
     "format": "cd server && npm run format",
     "format:check": "cd server && npm run format:check"
   },
-  "devDependencies": {}
+  "dependencies": {
+    "pngjs": "^7.0.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "lucide-static": "^0.576.0"
+  }
 }

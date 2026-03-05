@@ -18,7 +18,7 @@ Civilization Clash is a turn-based strategy game designed for the AI Battlegroun
 ### Game Modes
 
 - **Standard**: 25×15 map, 200 turns, full feature set
-- **Blitz**: 15×10 map, 50 turns, faster gameplay
+- **Blitz**: 15×11 map, 50 turns, faster gameplay
 
 ## Current Implementation Status
 
