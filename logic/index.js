@@ -4,7 +4,12 @@
  */
 
 const { processTurn, cloneState, getScoreMultiplier, calculateIncome } = require('./processor');
-const { generateMap, createInitialState, validateMap } = require('./map-generator');
+const {
+  generateMap,
+  generateTournamentMap,
+  createInitialState,
+  validateMap,
+} = require('./map-generator');
 const {
   validateAction,
   validateActions,
@@ -29,6 +34,7 @@ module.exports = {
   processTurn,
   createInitialState,
   generateMap,
+  generateTournamentMap,
   validateActions,
 
   // Utility functions

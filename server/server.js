@@ -34,12 +34,12 @@ const SERVER_MESSAGES = {
 };
 
 function createServer(options = {}) {
-  const { port = PORT, turnTimeout = 2000, protectedMode = false, maxSaves = 20 } = options;
+  const { port = PORT, mode, turnTimeout = 2000, protectedMode = false, maxSaves = 20 } = options;
   const clientOverride = !protectedMode;
 
   const wss = new WebSocketServer({ port });
   const connectionManager = new ConnectionManager({ protectedMode });
-  const gameManager = new GameManager(connectionManager, { clientOverride, turnTimeout, maxSaves });
+  const gameManager = new GameManager(connectionManager, { mode, clientOverride, turnTimeout, maxSaves });
 
   gameManager.setEventCallback((event, data) => {
     handleGameEvent(connectionManager, event, data);
@@ -270,6 +270,8 @@ if (require.main === module) {
     mode = modeArg.split('=')[1];
   } else if (args.includes('--standard')) {
     mode = 'standard';
+  } else if (args.includes('--tournament')) {
+    mode = 'tournament';
   }
 
   // Parse timeout: --timeout=2000

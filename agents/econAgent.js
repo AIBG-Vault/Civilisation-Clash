@@ -20,6 +20,27 @@ const {
   isInZoC,
 } = require('../logic');
 
+/**
+ * Get the x-coordinate of the enemy side (for forward push direction)
+ */
+function getEnemySideX(state, playerId) {
+  const centerX = Math.floor(state.map.width / 2);
+  const myCities = state.cities.filter((c) => c.owner === playerId);
+  if (myCities.length === 0) return centerX;
+  const capital = myCities.reduce(
+    (best, c) => (Math.abs(c.x - centerX) > Math.abs(best.x - centerX) ? c : best),
+    myCities[0]
+  );
+  return capital.x < centerX ? state.map.width - 1 : 0;
+}
+
+/**
+ * Map-size scale factor (1 for blitz, ~1.5 for standard, ~2.8 for tournament)
+ */
+function getMapScale(state) {
+  return Math.max(1, Math.sqrt((state.map.width * state.map.height) / 165));
+}
+
 // --- Helpers (shared patterns from other agents) ---
 
 function getValidMoves(state, unit) {
@@ -77,12 +98,9 @@ function getValidExpands(state, playerId) {
   const seen = new Set();
   const ownedTiles = state.map.tiles.filter((t) => t.owner === playerId);
   const capital = getCapital(state, playerId);
-  // Expand outward from capital in a broad circle
   const anchorX = capital ? capital.x : Math.floor(state.map.width / 2);
   const anchorY = capital ? capital.y : Math.floor(state.map.height / 2);
-
-  const centerX = Math.floor(state.map.width / 2);
-  const centerY = Math.floor(state.map.height / 2);
+  const enemyX = getEnemySideX(state, playerId);
 
   for (const tile of ownedTiles) {
     const adjacent = getTilesAtDistance1(tile.x, tile.y);
@@ -96,14 +114,14 @@ function getValidExpands(state, playerId) {
         expands.push({
           action,
           dist: chebyshevDistance(pos.x, pos.y, anchorX, anchorY),
-          centerDist: chebyshevDistance(pos.x, pos.y, centerX, centerY),
+          forwardDist: Math.abs(pos.x - enemyX),
         });
       }
     }
   }
 
-  // Expand closest to capital first, break ties by center proximity
-  expands.sort((a, b) => a.dist - b.dist || a.centerDist - b.centerDist);
+  // Expand closest to capital first, break ties by forward distance (toward enemy)
+  expands.sort((a, b) => a.dist - b.dist || a.forwardDist - b.forwardDist);
   return expands.map((e) => e.action);
 }
 
@@ -139,14 +157,13 @@ function getValidCityLocations(state, playerId) {
     if (state.units.some((u) => u.x === tile.x && u.y === tile.y)) continue;
 
     let score = 0;
-    const centerX = Math.floor(state.map.width / 2);
-    const centerY = Math.floor(state.map.height / 2);
+    const enemyX = getEnemySideX(state, playerId);
     // Strong preference for close to capital
     if (capital) {
       score -= chebyshevDistance(tile.x, tile.y, capital.x, capital.y) * 10;
     }
-    // Tiebreaker: prefer tiles closer to center (symmetric for both players)
-    score -= chebyshevDistance(tile.x, tile.y, centerX, centerY) * 0.5;
+    // Tiebreaker: prefer forward positions (closer to enemy side)
+    score -= Math.abs(tile.x - enemyX) * 0.5;
     // Small bonus for not being right on top of another city (min spacing 2)
     let minDistToOwn = Infinity;
     for (const c of myCities) {
@@ -168,10 +185,12 @@ function isAssaultTime(state, playerId) {
   const maxTurns = state.maxTurns || 200;
   const turnsLeft = maxTurns - state.turn;
   const myIncome = player.income;
+  const scale = getMapScale(state);
 
-  // Assault if: time is running out, or income is very high, or enemy is nearby
-  if (turnsLeft <= 40) return true;
-  if (myIncome >= 30) return true;
+  // Assault if: time is running out (proportional to game length)
+  if (turnsLeft <= Math.floor(maxTurns * 0.2)) return true;
+  // Income threshold scales with map size
+  if (myIncome >= Math.floor(30 * scale)) return true;
 
   // Assault if enemy units are threatening our cities
   const myCities = state.cities.filter((c) => c.owner === playerId);
@@ -187,10 +206,9 @@ function isAssaultTime(state, playerId) {
 
 function scoreMoveEcon(state, unit, tx, ty) {
   let score = 0;
-  const centerX = Math.floor(state.map.width / 2);
-  const centerY = Math.floor(state.map.height / 2);
+  const enemyX = getEnemySideX(state, unit.owner);
 
-  // During econ: garrison near own cities, nudge toward center
+  // During econ: garrison near own cities, nudge forward
   const myCities = state.cities.filter((c) => c.owner === unit.owner);
   let minCityDist = Infinity;
   for (const c of myCities) {
@@ -200,9 +218,9 @@ function scoreMoveEcon(state, unit, tx, ty) {
   if (minCityDist <= 2) score += 10;
   else score -= minCityDist * 3;
 
-  // Slight bias toward center
-  const curDist = chebyshevDistance(unit.x, unit.y, centerX, centerY);
-  const newDist = chebyshevDistance(tx, ty, centerX, centerY);
+  // Slight bias toward enemy side
+  const curDist = Math.abs(unit.x - enemyX);
+  const newDist = Math.abs(tx - enemyX);
   score += (curDist - newDist) * 2;
 
   return score;
@@ -210,28 +228,38 @@ function scoreMoveEcon(state, unit, tx, ty) {
 
 function scoreMoveAssault(state, unit, tx, ty) {
   let score = 0;
+  const enemyX = getEnemySideX(state, unit.owner);
   const centerX = Math.floor(state.map.width / 2);
   const centerY = Math.floor(state.map.height / 2);
 
-  // Push toward monument
-  const curDist = chebyshevDistance(unit.x, unit.y, centerX, centerY);
-  const newDist = chebyshevDistance(tx, ty, centerX, centerY);
-  score += (curDist - newDist) * 10;
+  // Push forward toward enemy side
+  const curForward = Math.abs(unit.x - enemyX);
+  const newForward = Math.abs(tx - enemyX);
+  score += (curForward - newForward) * 8;
 
-  // Soldiers push toward enemy cities
+  // Pull toward monument only when reasonably close
+  const curDistMon = chebyshevDistance(unit.x, unit.y, centerX, centerY);
+  if (curDistMon <= 10) {
+    const newDistMon = chebyshevDistance(tx, ty, centerX, centerY);
+    score += (curDistMon - newDistMon) * 5;
+  }
+
+  // Soldiers push toward nearby enemy cities
   if (UNIT_STATS[unit.type].canCaptureCities) {
     const enemyCities = state.cities.filter((c) => c.owner !== unit.owner);
     for (const city of enemyCities) {
       const cd = chebyshevDistance(unit.x, unit.y, city.x, city.y);
+      if (cd > 15) continue;
       const nd = chebyshevDistance(tx, ty, city.x, city.y);
       score += (cd - nd) * 15;
     }
   }
 
-  // Move toward enemies
+  // Move toward nearby enemies
   const enemies = state.units.filter((u) => u.owner !== unit.owner);
   for (const enemy of enemies) {
     const cd = chebyshevDistance(unit.x, unit.y, enemy.x, enemy.y);
+    if (cd > 10) continue;
     const nd = chebyshevDistance(tx, ty, enemy.x, enemy.y);
     score += (cd - nd) * 5;
   }
@@ -264,8 +292,9 @@ function generateActions(state, playerId) {
   if (!assault) {
     // === ECONOMY PHASE ===
 
-    // 1. Build cities aggressively — target 1 city per ~12 tiles, up to 6
-    const targetCities = Math.min(6, Math.floor(myTiles.length / 12) + 1);
+    // 1. Build cities aggressively — target 1 city per ~12 tiles, scaled by map size
+    const scale = getMapScale(state);
+    const targetCities = Math.min(Math.floor(6 * scale), Math.floor(myTiles.length / 12) + 1);
     if (myCities.length < targetCities && gold >= ECONOMY.CITY_COST) {
       const locs = getValidCityLocations(state, playerId);
       if (locs.length > 0) {
@@ -320,7 +349,8 @@ function generateActions(state, playerId) {
     // === ASSAULT PHASE ===
 
     // 1. Still build a city if we can and have few
-    if (myCities.length < 3 && gold >= ECONOMY.CITY_COST + 60) {
+    const scale = getMapScale(state);
+    if (myCities.length < Math.floor(3 * scale) && gold >= ECONOMY.CITY_COST + 60) {
       const locs = getValidCityLocations(state, playerId);
       if (locs.length > 0) {
         actions.push(locs[0].action);

@@ -21,6 +21,27 @@ const {
 } = require('../logic');
 
 /**
+ * Get the x-coordinate of the enemy side (for forward push direction)
+ */
+function getEnemySideX(state, playerId) {
+  const centerX = Math.floor(state.map.width / 2);
+  const myCities = state.cities.filter((c) => c.owner === playerId);
+  if (myCities.length === 0) return centerX;
+  const capital = myCities.reduce(
+    (best, c) => (Math.abs(c.x - centerX) > Math.abs(best.x - centerX) ? c : best),
+    myCities[0]
+  );
+  return capital.x < centerX ? state.map.width - 1 : 0;
+}
+
+/**
+ * Map-size scale factor (1 for blitz, ~1.5 for standard, ~2.8 for tournament)
+ */
+function getMapScale(state) {
+  return Math.max(1, Math.sqrt((state.map.width * state.map.height) / 165));
+}
+
+/**
  * Get all valid moves for a unit
  */
 function getValidMoves(state, unit) {
@@ -92,8 +113,7 @@ function getValidExpands(state, playerId) {
   const expands = [];
   const seen = new Set();
   const ownedTiles = state.map.tiles.filter((t) => t.owner === playerId);
-  const centerX = Math.floor(state.map.width / 2);
-  const centerY = Math.floor(state.map.height / 2);
+  const enemyX = getEnemySideX(state, playerId);
 
   for (const tile of ownedTiles) {
     const adjacent = getTilesAtDistance1(tile.x, tile.y);
@@ -112,14 +132,14 @@ function getValidExpands(state, playerId) {
       if (result.valid) {
         expands.push({
           action,
-          distToCenter: chebyshevDistance(pos.x, pos.y, centerX, centerY),
+          forwardDist: Math.abs(pos.x - enemyX),
         });
       }
     }
   }
 
-  // Sort by distance to center (expand toward monument first)
-  expands.sort((a, b) => a.distToCenter - b.distToCenter);
+  // Sort by forward distance (expand toward enemy side first)
+  expands.sort((a, b) => a.forwardDist - b.forwardDist);
   return expands.map((e) => e.action);
 }
 
@@ -130,8 +150,7 @@ function getValidCityLocations(state, playerId) {
   const player = state.players.find((p) => p.id === playerId);
   if (player.gold < ECONOMY.CITY_COST) return [];
 
-  const centerX = Math.floor(state.map.width / 2);
-  const centerY = Math.floor(state.map.height / 2);
+  const enemyX = getEnemySideX(state, playerId);
   const myCities = state.cities.filter((c) => c.owner === playerId);
   const locations = [];
 
@@ -151,9 +170,9 @@ function getValidCityLocations(state, playerId) {
     // Score the location
     let score = 0;
 
-    // Prefer locations closer to center/monument
-    const distToCenter = chebyshevDistance(tile.x, tile.y, centerX, centerY);
-    score += (10 - distToCenter) * 5;
+    // Prefer forward positions (closer to enemy side)
+    const forwardDist = Math.abs(tile.x - enemyX);
+    score += (state.map.width - forwardDist) * 2;
 
     // Prefer locations away from existing cities (spread out)
     let minDistToOwnCity = Infinity;
@@ -194,28 +213,38 @@ function getValidCityLocations(state, playerId) {
  */
 function scoreMoveTarget(state, unit, targetX, targetY) {
   let score = 0;
+  const enemyX = getEnemySideX(state, unit.owner);
   const centerX = Math.floor(state.map.width / 2);
   const centerY = Math.floor(state.map.height / 2);
 
-  // Prefer moving toward monument
-  const currentDistToCenter = chebyshevDistance(unit.x, unit.y, centerX, centerY);
-  const newDistToCenter = chebyshevDistance(targetX, targetY, centerX, centerY);
-  score += (currentDistToCenter - newDistToCenter) * 10;
+  // Push forward toward enemy side
+  const currentForwardDist = Math.abs(unit.x - enemyX);
+  const newForwardDist = Math.abs(targetX - enemyX);
+  score += (currentForwardDist - newForwardDist) * 8;
 
-  // Soldiers: prefer moving toward enemy cities
+  // Pull toward monument only when reasonably close
+  const curDistMon = chebyshevDistance(unit.x, unit.y, centerX, centerY);
+  if (curDistMon <= 10) {
+    const newDistMon = chebyshevDistance(targetX, targetY, centerX, centerY);
+    score += (curDistMon - newDistMon) * 5;
+  }
+
+  // Soldiers: prefer moving toward nearby enemy cities
   if (UNIT_STATS[unit.type].canCaptureCities) {
     const enemyCities = state.cities.filter((c) => c.owner !== unit.owner);
     for (const city of enemyCities) {
       const currentDist = chebyshevDistance(unit.x, unit.y, city.x, city.y);
+      if (currentDist > 15) continue;
       const newDist = chebyshevDistance(targetX, targetY, city.x, city.y);
       score += (currentDist - newDist) * 15;
     }
   }
 
-  // Prefer moving toward enemies
+  // Prefer moving toward nearby enemies
   const enemies = state.units.filter((u) => u.owner !== unit.owner);
   for (const enemy of enemies) {
     const currentDist = chebyshevDistance(unit.x, unit.y, enemy.x, enemy.y);
+    if (currentDist > 10) continue;
     const newDist = chebyshevDistance(targetX, targetY, enemy.x, enemy.y);
     score += (currentDist - newDist) * 5;
   }

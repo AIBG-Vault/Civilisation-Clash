@@ -6,6 +6,7 @@
 const MODES = {
   STANDARD: 'standard',
   BLITZ: 'blitz',
+  TOURNAMENT: 'tournament',
 };
 
 // Mode-specific settings
@@ -21,6 +22,12 @@ const MODE_SETTINGS = {
     mapWidth: 15,
     mapHeight: 11,
     startingGold: 50,
+  },
+  [MODES.TOURNAMENT]: {
+    maxTurns: 250,
+    mapWidth: 25,
+    mapHeight: 23,
+    startingGold: 40,
   },
 };
 
