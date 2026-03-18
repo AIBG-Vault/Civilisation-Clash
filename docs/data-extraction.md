@@ -193,7 +193,7 @@ ws.send(JSON.stringify({ type: 'LOAD_SAVE', saveId: 'some-save-id' }));
 | ARCHER            | 2×      | 1×     | 1×     |
 | RAIDER            | 0×      | 2×     | 1×     |
 
-**Economy**: FIELD_INCOME: 0.5, CITY_INCOME: 5, EXPAND_COST: 5, CITY_COST: 80 (base, scales ×1.5 per built city), ROAD_COST: 15, PLUNDER_GOLD: 3
+**Economy**: FIELD_INCOME: 0.5, CITY_INCOME: 5, EXPAND_COST: 5, CITY_COST: 80 (base, scales ×1.5 per built city), PLUNDER_GOLD: 3
 
 **Unit Upkeep**: UPKEEP_BASE: 0.5, UPKEEP_GROWTH: 1.12, FREE_UNITS_PER_CITY: 3. Formula: `upkeep = 0.5 × (1.12^excess - 1) / 0.12` where excess = max(0, units - cities × 3). If gold goes negative, cheapest units are disbanded.
 

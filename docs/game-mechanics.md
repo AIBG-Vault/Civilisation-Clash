@@ -71,7 +71,7 @@ Used for: archer range, soldier Zone of Control, raider movement.
 | **Cost**            | 20G                  | 25G                        | 15G                  |
 | **HP**              | 2                    | 2                          | 1                    |
 | **Damage**          | 1                    | 1                          | 1                    |
-| **Movement**        | 1 (2 on road)        | 1 (2 on road)              | 2 (4 on road)        |
+| **Movement**        | 1                    | 1                          | 2                    |
 | **Attack**          | Melee (all adjacent) | Ranged (1 target, range 2) | Melee (all adjacent) |
 | **Zone of Control** | Range 2              | --                         | --                   |
 | **ZoC Immune**      | Yes                  | No                         | No                   |
@@ -172,10 +172,6 @@ If gold goes negative, the cheapest units are automatically disbanded until the 
 | 3rd built | 180G |
 | 4th built | 270G |
 
-### Build Road
-
-**15G** per tile. Must be a field tile you own, with no existing road. Roads double a unit's movement when the unit starts its turn on a road tile (soldier 1→2, archer 1→2, raider 2→4). Roads persist through ownership changes — captured roads benefit the new owner.
-
 ### Build Unit
 
 Spawned at your cities. City tile must be unoccupied. New units cannot move on their spawn turn.
@@ -214,5 +210,36 @@ Both players submit actions before processing begins. Phases run in this order:
 2. **Archers** -- all archers with targets in range fire. Archers that fire cannot move this turn.
 3. **Movement** -- MOVE actions processed. ZoC enforced. Moving onto enemy territory raids it. Soldiers capture enemy cities.
 4. **Melee** -- soldiers and raiders auto-attack all adjacent enemies. Damage simultaneous.
-5. **Build** -- BUILD_UNIT, BUILD_CITY, BUILD_ROAD, EXPAND_TERRITORY processed. Gold deducted. New units spawn with `canMove: false`.
+5. **Build** -- BUILD_UNIT, BUILD_CITY, EXPAND_TERRITORY processed. Gold deducted. New units spawn with `canMove: false`.
 6. **Scoring** -- monument control determined, monument gold awarded, end conditions checked.
+
+## Fog of War
+
+By default, fog of war is **enabled**. Each player only sees tiles within their vision range. Use `--no-fog` to disable.
+
+### Vision Sources
+
+| Source    | Radius (Chebyshev) |
+| --------- | ------------------ |
+| Territory | 0 (tile itself)    |
+| Soldier   | 2                  |
+| Archer    | 3                  |
+| Raider    | 2                  |
+| City      | 5                  |
+
+### What's Visible
+
+- **Terrain types**: always visible (map layout is public)
+- **Monuments**: always visible (landmarks)
+- **Own units/cities/territory**: always visible
+- **Enemy units**: hidden outside your vision
+- **Enemy cities**: hidden outside your vision
+- **Territory ownership**: hidden outside your vision (shows as neutral)
+
+### Server Behavior
+
+When fog is enabled, `state.units`, `state.cities`, and `state.map.tiles[].owner` are **filtered per player**. Bots only receive information within their vision. The state also includes `_fogEnabled: true` and `_visibleTiles: ["x,y", ...]`.
+
+### Spectators
+
+Spectators see everything (full state). The spectator state includes `_vision0` and `_vision1` arrays showing each player's vision boundaries.

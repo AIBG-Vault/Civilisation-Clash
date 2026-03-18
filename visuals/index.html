@@ -598,8 +598,16 @@
             <span id="p1-connection-dot" class="connection-dot"></span>
             <span class="text-xs text-team1 font-medium">P2</span>
             <button
-              id="btn-terminal"
+              id="btn-fog"
               class="control-btn w-6 h-6 ml-auto"
+              title="Toggle Fog of War"
+              onclick="App.toggleFog()"
+            >
+              <i data-lucide="cloud" class="w-3 h-3"></i>
+            </button>
+            <button
+              id="btn-terminal"
+              class="control-btn w-6 h-6"
               title="Terminal (T)"
               onclick="toggleTerminal()"
             >
@@ -635,7 +643,7 @@
               <select id="setting-map-size" class="input-field w-full text-xs">
                 <option value="standard">Standard (25x15, 200t)</option>
                 <option value="blitz">Blitz (15x11, 50t)</option>
-                <option value="tournament">Tournament (25x23, 250t)</option>
+                <option value="tournament">Tournament (25x23, 350t)</option>
               </select>
             </div>
             <div>
@@ -690,6 +698,10 @@
                 value="500"
                 min="100"
               />
+            </div>
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-medium">Fog of War</label>
+              <input type="checkbox" id="setting-fog" class="w-4 h-4" checked />
             </div>
             <button
               class="action-btn primary w-full justify-center text-xs py-1"
@@ -771,7 +783,7 @@
               <button class="unit-card" data-unit="raider">
                 <div class="unit-icon bg-team0/20 text-team0">R</div>
                 <div class="font-medium">Raider</div>
-                <div class="text-xs text-slate-500 dark:text-slate-400">10 gold</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">15 gold</div>
               </button>
             </div>
             <div class="mb-4">
@@ -812,10 +824,10 @@
         <button
           class="inline-build-card"
           onclick="if(typeof ManualPlay!=='undefined') ManualPlay.queueBuildUnit(null,null,'RAIDER')"
-          title="Raider (10g)"
+          title="Raider (15g)"
         >
           <div class="inline-build-icon bg-blue-100 dark:bg-blue-900/30 text-team0">R</div>
-          <span class="text-xs">10g</span>
+          <span class="text-xs">15g</span>
         </button>
       </div>
     </div>

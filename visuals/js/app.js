@@ -506,6 +506,9 @@ const App = {
       'info'
     );
 
+    const fogCheckbox = document.getElementById('setting-fog');
+    const fogOfWar = fogCheckbox ? fogCheckbox.checked : true;
+
     this.send({
       type: 'GAME_CONTROL',
       command: 'update_settings',
@@ -513,8 +516,27 @@ const App = {
         mode: mode,
         turnTimeout: turnTimeout,
         oversightTimeoutMs: oversightTimeoutMs,
+        fogOfWar: fogOfWar,
       },
     });
+  },
+
+  /**
+   * Toggle fog of war via toolbar button
+   */
+  toggleFog() {
+    const fogCheckbox = document.getElementById('setting-fog');
+    if (fogCheckbox) fogCheckbox.checked = !fogCheckbox.checked;
+    // Send settings update to server
+    this.send({
+      type: 'GAME_CONTROL',
+      command: 'update_settings',
+      settings: { fogOfWar: fogCheckbox ? fogCheckbox.checked : false },
+    });
+    Panels.addTerminalMessage(
+      `Fog of War: ${fogCheckbox && fogCheckbox.checked ? 'ON' : 'OFF'}`,
+      'info'
+    );
   },
 
   /**
@@ -723,6 +745,11 @@ const App = {
         timeoutInput.disabled = !data.settings.turnTimeout;
       }
       if (noTimeoutCheck) noTimeoutCheck.checked = !data.settings.turnTimeout;
+
+      const fogCheckbox = document.getElementById('setting-fog');
+      if (fogCheckbox && data.settings.fogOfWar !== undefined) {
+        fogCheckbox.checked = data.settings.fogOfWar;
+      }
     }
   },
 
@@ -906,11 +933,11 @@ const App = {
         { x: 6, y: 4, owner: 0 },
       ],
       units: [
-        { x: 3, y: 3, owner: 0, type: 'SOLDIER', hp: 3, can_move_next_turn: true },
+        { x: 3, y: 3, owner: 0, type: 'SOLDIER', hp: 2, can_move_next_turn: true },
         { x: 4, y: 2, owner: 0, type: 'ARCHER', hp: 2, can_move_next_turn: true },
         { x: 5, y: 4, owner: 0, type: 'RAIDER', hp: 1, can_move_next_turn: true },
         { x: 11, y: 6, owner: 1, type: 'SOLDIER', hp: 2, can_move_next_turn: true },
-        { x: 10, y: 7, owner: 1, type: 'SOLDIER', hp: 3, can_move_next_turn: false },
+        { x: 10, y: 7, owner: 1, type: 'SOLDIER', hp: 2, can_move_next_turn: false },
         { x: 9, y: 5, owner: 1, type: 'ARCHER', hp: 1, can_move_next_turn: true },
       ],
       monuments: [{ x: 7, y: 5, controlledBy: 0 }],

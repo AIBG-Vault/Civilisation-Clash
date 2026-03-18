@@ -19,6 +19,9 @@ const {
   manhattanDistance,
   isInZoC,
   calculateIncome,
+  computeVision,
+  filterStateForPlayer,
+  filterEventsForPlayer,
   MODES,
   TERRAIN,
   UNIT_TYPES,
@@ -26,6 +29,7 @@ const {
   ACTIONS,
   ECONOMY,
   SCORING,
+  VISION,
   getConnectedTerritory,
 } = require('../index');
 
@@ -1142,6 +1146,203 @@ describe('Territory connectivity', () => {
       targetTile.owner,
       null,
       'Disconnected expansion should be rejected by processor'
+    );
+  });
+});
+
+// ===== FOG OF WAR TESTS =====
+
+describe('Fog of War - computeVision', () => {
+  it('own territory tiles are visible (radius 0)', () => {
+    const state = createTestState();
+    const vision = computeVision(state, 0);
+
+    // P0 owns tiles at (1,4), (1,5), (1,6), (2,4), (2,5), (2,6)
+    assert.ok(vision.has('1,5'), 'Own territory tile should be visible');
+    assert.ok(vision.has('2,5'), 'Own territory tile should be visible');
+    // Neutral tile far away should not be visible (outside city radius 5 from (1,5))
+    // (8,1): Chebyshev from city (1,5) = max(7,4) = 7 > 5
+    assert.ok(!vision.has('8,1'), 'Distant neutral tile should not be visible without units');
+  });
+
+  it('soldier provides vision radius 2', () => {
+    const state = createTestState();
+    state.units.push({ x: 4, y: 4, owner: 0, type: UNIT_TYPES.SOLDIER, hp: 2, canMove: true });
+
+    const vision = computeVision(state, 0);
+
+    // Chebyshev distance 2 from (4,4)
+    assert.ok(vision.has('4,4'), 'Soldier tile visible');
+    assert.ok(vision.has('6,6'), 'Chebyshev distance 2 visible');
+    assert.ok(vision.has('2,2'), 'Chebyshev distance 2 visible');
+    assert.ok(!vision.has('7,4'), 'Chebyshev distance 3 NOT visible');
+  });
+
+  it('archer provides vision radius 3', () => {
+    const state = createTestState();
+    state.units.push({ x: 5, y: 5, owner: 0, type: UNIT_TYPES.ARCHER, hp: 2, canMove: true });
+
+    const vision = computeVision(state, 0);
+
+    assert.ok(vision.has('8,5'), 'Chebyshev distance 3 visible for archer');
+    assert.ok(vision.has('2,5'), 'Chebyshev distance 3 visible for archer');
+    // (9,9): Chebyshev from archer (5,5) = 4 > 3, from city (1,5) = max(8,4) = 8 > 5
+    assert.ok(!vision.has('9,9'), 'Chebyshev distance 4 NOT visible for archer');
+  });
+
+  it('city provides vision radius 5', () => {
+    const state = createTestState();
+    // P0 city at (1,5)
+    const vision = computeVision(state, 0);
+
+    assert.ok(vision.has('6,5'), 'Chebyshev distance 5 from city visible');
+    assert.ok(vision.has('1,0'), 'Chebyshev distance 5 from city visible (clamped)');
+    assert.ok(!vision.has('7,5'), 'Chebyshev distance 6 from city NOT visible');
+  });
+
+  it('enemy units do not provide vision', () => {
+    const state = createTestState();
+    state.units.push({ x: 5, y: 5, owner: 1, type: UNIT_TYPES.SOLDIER, hp: 2, canMove: true });
+
+    const vision = computeVision(state, 0);
+    // (5,5) is the monument tile — should only be visible if in P0's range
+    // P0 city at (1,5) has radius 5, so (5,5) is exactly distance 4 — visible from city
+    // But (7,5) should not be visible (distance 6 from city, 2 from enemy soldier)
+    assert.ok(!vision.has('7,7'), 'Tile near enemy soldier should not be visible to P0');
+  });
+
+  it('clamps to map bounds', () => {
+    const state = createTestState();
+    state.units.push({ x: 1, y: 1, owner: 0, type: UNIT_TYPES.SOLDIER, hp: 2, canMove: true });
+
+    const vision = computeVision(state, 0);
+
+    // Should not contain negative coords
+    assert.ok(!vision.has('-1,0'), 'Should not have negative x');
+    assert.ok(!vision.has('0,-1'), 'Should not have negative y');
+    assert.ok(vision.has('0,0'), 'Edge tile should be visible');
+  });
+});
+
+describe('Fog of War - filterStateForPlayer', () => {
+  it('keeps own units, hides enemy units outside vision', () => {
+    const state = createTestState();
+    state.units.push(
+      { x: 2, y: 5, owner: 0, type: UNIT_TYPES.SOLDIER, hp: 2, canMove: true },
+      { x: 8, y: 5, owner: 1, type: UNIT_TYPES.SOLDIER, hp: 2, canMove: true }
+    );
+
+    const vision = computeVision(state, 0);
+    const filtered = filterStateForPlayer(state, 0, vision);
+
+    // Own unit always visible
+    assert.ok(
+      filtered.units.some((u) => u.owner === 0),
+      'Own unit should be visible'
+    );
+
+    // Enemy unit at (8,5) — is it in vision? P0 city at (1,5) has radius 5, so (8,5) is Chebyshev 7 away
+    // P0 soldier at (2,5) has radius 2, so (8,5) is Chebyshev 6 away
+    // So enemy should be hidden
+    const enemyVisible = filtered.units.some((u) => u.owner === 1);
+    assert.ok(!enemyVisible, 'Enemy unit far from vision should be hidden');
+  });
+
+  it('shows enemy units inside vision', () => {
+    const state = createTestState();
+    state.units.push(
+      { x: 4, y: 5, owner: 0, type: UNIT_TYPES.SOLDIER, hp: 2, canMove: true },
+      { x: 5, y: 4, owner: 1, type: UNIT_TYPES.RAIDER, hp: 1, canMove: true }
+    );
+
+    const vision = computeVision(state, 0);
+    const filtered = filterStateForPlayer(state, 0, vision);
+
+    // Enemy raider at (5,4) — within soldier vision radius 2
+    const enemyVisible = filtered.units.some((u) => u.owner === 1);
+    assert.ok(enemyVisible, 'Enemy unit inside vision should be visible');
+  });
+
+  it('hides territory ownership outside vision', () => {
+    const state = createTestState();
+    const vision = computeVision(state, 0);
+    const filtered = filterStateForPlayer(state, 0, vision);
+
+    // P1 territory at (8,5) should have owner hidden (set to null)
+    const enemyTile = filtered.map.tiles.find((t) => t.x === 8 && t.y === 5);
+    // Check if (8,5) is in vision — P0 city at (1,5) radius 5, so (8,5) is Chebyshev 7 — NOT visible
+    if (!vision.has('8,5')) {
+      assert.strictEqual(
+        enemyTile.owner,
+        null,
+        'Territory outside vision should have owner hidden'
+      );
+    }
+  });
+
+  it('injects _fogEnabled and _visibleTiles', () => {
+    const state = createTestState();
+    const vision = computeVision(state, 0);
+    const filtered = filterStateForPlayer(state, 0, vision);
+
+    assert.strictEqual(filtered._fogEnabled, true);
+    assert.ok(Array.isArray(filtered._visibleTiles));
+    assert.ok(filtered._visibleTiles.length > 0);
+  });
+
+  it('keeps monuments visible even outside vision', () => {
+    const state = createTestState();
+    // Monument at (5,5) — check it stays as-is even if outside a player's narrow vision
+    const smallVision = new Set(['1,5']);
+    const filtered = filterStateForPlayer(state, 0, smallVision);
+
+    const monumentTile = filtered.map.tiles.find((t) => t.x === 5 && t.y === 5);
+    assert.strictEqual(monumentTile.type, TERRAIN.MONUMENT, 'Monument tile should keep its type');
+  });
+});
+
+describe('Fog of War - filterEventsForPlayer', () => {
+  it('MONUMENT_CONTROL events always visible', () => {
+    const events = [
+      { type: 'MONUMENT_CONTROL', data: { controlledBy: 1, goldAwarded: 3, scoreAwarded: 6 } },
+    ];
+    const filtered = filterEventsForPlayer(events, 0, new Set());
+    assert.strictEqual(filtered.length, 1, 'Monument events should always be visible');
+  });
+
+  it('COMBAT event visible if own unit involved', () => {
+    const events = [
+      {
+        type: 'COMBAT',
+        data: {
+          attacker: { x: 3, y: 3, owner: 0, type: 'SOLDIER' },
+          target: { x: 4, y: 3, owner: 1, type: 'RAIDER' },
+          damage: 1,
+          isKill: true,
+        },
+      },
+    ];
+    const filtered = filterEventsForPlayer(events, 0, new Set());
+    assert.strictEqual(filtered.length, 1, 'Combat with own unit should be visible');
+  });
+
+  it('COMBAT event hidden if no own units and outside vision', () => {
+    const events = [
+      {
+        type: 'COMBAT',
+        data: {
+          attacker: { x: 8, y: 8, owner: 1, type: 'SOLDIER' },
+          target: { x: 7, y: 8, owner: 1, type: 'RAIDER' },
+          damage: 1,
+          isKill: false,
+        },
+      },
+    ];
+    const filtered = filterEventsForPlayer(events, 0, new Set(['1,1']));
+    assert.strictEqual(
+      filtered.length,
+      0,
+      'Combat between enemies outside vision should be hidden'
     );
   });
 });

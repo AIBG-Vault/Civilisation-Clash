@@ -98,8 +98,7 @@ You have `timeout` ms to respond. If you miss it, the turn processes without you
   "actions": [
     { "action": "MOVE", "from_x": 3, "from_y": 7, "to_x": 4, "to_y": 7 },
     { "action": "BUILD_UNIT", "city_x": 2, "city_y": 7, "unit_type": "SOLDIER" },
-    { "action": "EXPAND_TERRITORY", "x": 5, "y": 8 },
-    { "action": "BUILD_ROAD", "x": 3, "y": 7 }
+    { "action": "EXPAND_TERRITORY", "x": 5, "y": 8 }
   ]
 }
 ```
@@ -257,7 +256,7 @@ The server auto-restarts after 3 seconds. Keep your bot running.
 ```
 
 - Units identified by position, not ID
-- Max distance: 1 (soldier, archer) or 2 (raider), Chebyshev. Doubled when unit starts on a road tile.
+- Max distance: 1 (soldier, archer) or 2 (raider), Chebyshev
 - Blocked if: in enemy soldier ZoC (unless unit is a soldier), archer already shot, target impassable or occupied
 - Non-raider units moving onto enemy territory raid it (neutral) and stop further movement
 - Raiders move freely through enemy territory and plunder a 3x3 area each turn (3G per tile)
@@ -291,16 +290,6 @@ The server auto-restarts after 3 seconds. Keep your bot running.
 - Cost: 5G
 - Target must be neutral, field type, adjacent to your territory (distance 1)
 - Adjacent territory must be **connected to one of your cities** — cut-off territory cannot be expanded from
-
-### BUILD_ROAD
-
-```json
-{ "action": "BUILD_ROAD", "x": 8, "y": 6 }
-```
-
-- Cost: 15G
-- Must be a field tile you own, no existing road
-- Units starting on a road tile get doubled movement
 
 ### PASS
 
@@ -358,9 +347,10 @@ The `state` object received in TURN_START and TURN_RESULT:
 - Units identified by position. One unit per tile max.
 - `tiles` is a flat array of `width * height` entries. Types: `FIELD`, `MOUNTAIN`, `WATER`, `MONUMENT`.
 - `owner` is `null` (neutral), `0`, or `1`. Mountains/water are always `null`.
-- `hasRoad`: `true` if a road has been built on this tile. Roads persist through ownership changes.
 - `canMove`: `false` for newly spawned units and archers that shot this turn.
 - `monuments` is an array of monument objects. Standard/blitz has 1 (at center), tournament has 2 (side lanes).
+
+**Fog of War**: When fog is enabled (default), `state.units` and `state.cities` only contain entries visible to your team. Territory ownership (`tiles[].owner`) is `null` for tiles outside your vision. The state includes `_fogEnabled: true` and `_visibleTiles` (array of `"x,y"` strings your team can see). Vision sources: own territory (self only), units (Soldier 2, Archer 3, Raider 2), cities (radius 5). See [game-mechanics.md](game-mechanics.md#fog-of-war) for details.
 
 ## Bot Skeleton -- JavaScript
 

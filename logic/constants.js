@@ -181,6 +181,15 @@ const DISTANCE_2_ONLY_OFFSETS = [
 // All distance 2 offsets (distance 1 + distance 2 only = 20 tiles)
 const DISTANCE_2_OFFSETS = [...DISTANCE_1_OFFSETS, ...DISTANCE_2_ONLY_OFFSETS];
 
+// Vision radii (Chebyshev distance) for fog of war
+const VISION = {
+  [UNIT_TYPES.SOLDIER]: 2,
+  [UNIT_TYPES.ARCHER]: 3,
+  [UNIT_TYPES.RAIDER]: 2,
+  CITY: 5,
+  TERRITORY: 0, // Own territory tiles see only themselves
+};
+
 module.exports = {
   MODES,
   MODE_SETTINGS,
@@ -192,6 +201,7 @@ module.exports = {
   SCORING,
   ACTIONS,
   DAMAGE_MULTIPLIERS,
+  VISION,
   DISTANCE_1_OFFSETS,
   DISTANCE_2_ONLY_OFFSETS,
   DISTANCE_2_OFFSETS,

@@ -28,6 +28,8 @@ const {
   getConnectedTerritory,
 } = require('./validation');
 const { renderState, printState, renderEvents, printEvents } = require('./terminal');
+const { computeVision } = require('./vision');
+const { filterStateForPlayer, filterEventsForPlayer } = require('./fog');
 const constants = require('./constants');
 
 // Re-export everything
@@ -59,6 +61,11 @@ module.exports = {
   isInZoC,
   isAdjacentToOwnTerritory,
   getConnectedTerritory,
+
+  // Fog of war
+  computeVision,
+  filterStateForPlayer,
+  filterEventsForPlayer,
 
   // Terminal visualization
   renderState,

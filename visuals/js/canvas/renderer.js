@@ -19,6 +19,11 @@ const Renderer = {
   _cityGrid: null, // _cityGrid[`x,y`] = city
   _capitalCache: null, // Set of "owner" ids whose first city has been found
 
+  // Fog of war vision sets
+  _visionSet: null, // Set<"x,y"> — player's own vision
+  _vision0Set: null, // Set<"x,y"> — P0 vision (spectator mode)
+  _vision1Set: null, // Set<"x,y"> — P1 vision (spectator mode)
+
   // Tile layer cache — offscreen canvas redrawn only on state/zoom change
   _tileCacheCanvas: null,
   _tileCacheZoom: -1,
@@ -530,6 +535,9 @@ const Renderer = {
       this._unitGrid = null;
       this._cityGrid = null;
       this._capitalCache = null;
+      this._visionSet = null;
+      this._vision0Set = null;
+      this._vision1Set = null;
       return;
     }
 
@@ -565,6 +573,23 @@ const Renderer = {
           this._capitalCache[`${c.x},${c.y}`] = true;
         }
       }
+    }
+
+    // Fog of war vision sets
+    if (state._fogEnabled) {
+      if (state._visibleTiles) {
+        // Player view — own vision
+        this._visionSet = new Set(state._visibleTiles);
+      } else {
+        this._visionSet = null;
+      }
+      // Spectator view — both players' vision
+      this._vision0Set = state._vision0 ? new Set(state._vision0) : null;
+      this._vision1Set = state._vision1 ? new Set(state._vision1) : null;
+    } else {
+      this._visionSet = null;
+      this._vision0Set = null;
+      this._vision1Set = null;
     }
   },
 
@@ -619,6 +644,9 @@ const Renderer = {
 
     // Draw units
     this.drawUnits(ctx, time);
+
+    // Draw vision borders (after everything, so they're on top)
+    this.drawVisionBorder(ctx);
 
     // Draw blood drop effects (damage indicators)
     if (this._damageEffects.length > 0) {
@@ -710,12 +738,28 @@ const Renderer = {
     Isometric.offsetY = -minY;
 
     // Draw all tiles (no hover/selection — those are drawn dynamically)
+    const fogVision = this._visionSet; // null if no fog or spectator
     for (let y = 0; y < H; y++) {
       const row = grid[y];
       for (let x = 0; x < W; x++) {
         const tile = row[x];
         if (!tile) continue;
         Tiles.drawTile(tctx, x, y, tile.type.toLowerCase(), tile.owner, {});
+
+        // Fog overlay: desaturate non-visible tiles (player view only)
+        if (fogVision && !fogVision.has(`${x},${y}`)) {
+          const isMountain = tile.type === 'MOUNTAIN';
+          const isMonument = tile.type === 'MONUMENT';
+          // Mountains and monuments "peak above" fog — lighter overlay
+          const alpha = isMountain || isMonument ? 0.3 : 0.55;
+          const corners = Isometric.getTileCorners(x, y);
+          tctx.beginPath();
+          tctx.moveTo(corners[0].x, corners[0].y);
+          for (let i = 1; i < 4; i++) tctx.lineTo(corners[i].x, corners[i].y);
+          tctx.closePath();
+          tctx.fillStyle = `rgba(15, 15, 25, ${alpha})`;
+          tctx.fill();
+        }
       }
     }
 
@@ -812,6 +856,70 @@ const Renderer = {
         showRange: isSelected,
       });
     });
+  },
+
+  /**
+   * Draw vision border outlines.
+   * Player view: single border around own vision edge.
+   * Spectator view: teal border for P0, white border for P1.
+   */
+  drawVisionBorder(ctx) {
+    if (!this.gameState || !this.gameState._fogEnabled) return;
+
+    const w = this.gameState.map.width;
+    const h = this.gameState.map.height;
+
+    // Direction offsets and which tile edge they correspond to
+    // For each adjacent direction, define the two corner indices that form that edge
+    const edgeMap = [
+      { dx: 0, dy: -1, corners: [0, 1] }, // top-right edge (N)
+      { dx: 1, dy: 0, corners: [1, 2] }, // bottom-right edge (E)
+      { dx: 0, dy: 1, corners: [2, 3] }, // bottom-left edge (S)
+      { dx: -1, dy: 0, corners: [3, 0] }, // top-left edge (W)
+    ];
+
+    const drawBorderForVision = (visionSet, color) => {
+      if (!visionSet) return;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.4;
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const key = `${x},${y}`;
+          if (!visionSet.has(key)) continue;
+
+          const corners = Isometric.getTileCorners(x, y);
+          // Check each neighbor — if neighbor is outside vision, draw that edge
+          for (const edge of edgeMap) {
+            const nx = x + edge.dx;
+            const ny = y + edge.dy;
+            const nKey = `${nx},${ny}`;
+            const neighborOutside = nx < 0 || nx >= w || ny < 0 || ny >= h || !visionSet.has(nKey);
+            if (neighborOutside) {
+              const c0 = corners[edge.corners[0]];
+              const c1 = corners[edge.corners[1]];
+              ctx.moveTo(c0.x, c0.y);
+              ctx.lineTo(c1.x, c1.y);
+            }
+          }
+        }
+      }
+
+      ctx.stroke();
+      ctx.restore();
+    };
+
+    if (this._vision0Set || this._vision1Set) {
+      // Spectator view — draw both players' vision borders
+      drawBorderForVision(this._vision0Set, '#22eedd'); // bright teal for P0
+      drawBorderForVision(this._vision1Set, '#e0e0e0'); // white for P1
+    } else if (this._visionSet) {
+      // Player view — draw own vision border
+      drawBorderForVision(this._visionSet, '#88aaff'); // soft blue for own vision
+    }
   },
 
   /**

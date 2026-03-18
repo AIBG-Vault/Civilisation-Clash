@@ -10,7 +10,7 @@ const Pathfinding = {
   UNIT_STATS: {
     SOLDIER: { movement: 1, immuneToZoC: true, cost: 20 },
     ARCHER: { movement: 1, immuneToZoC: false, cost: 25 },
-    RAIDER: { movement: 2, immuneToZoC: false, cost: 10 },
+    RAIDER: { movement: 2, immuneToZoC: false, cost: 15 },
   },
 
   ECONOMY: {

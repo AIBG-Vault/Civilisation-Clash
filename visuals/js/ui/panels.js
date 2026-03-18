@@ -283,7 +283,7 @@ const Panels = {
       document.getElementById('inspect-unit-type').textContent =
         details.unit.type.charAt(0).toUpperCase() + details.unit.type.slice(1).toLowerCase();
 
-      const maxHp = { SOLDIER: 3, ARCHER: 2, RAIDER: 1 }[details.unit.type] || 3;
+      const maxHp = { SOLDIER: 2, ARCHER: 2, RAIDER: 1 }[details.unit.type] || 2;
       const hpPercent = (details.unit.hp / maxHp) * 100;
       document.getElementById('inspect-unit-hp-bar').style.width = hpPercent + '%';
       document.getElementById('inspect-unit-hp').textContent = `${details.unit.hp}/${maxHp}`;

@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { createInitialState, processTurn, validateAction, MODES } = require('../logic');
+const { createInitialState, processTurn, validateAction, MODES, computeVision, filterStateForPlayer, filterEventsForPlayer } = require('../logic');
 
 const GAME_STATES = {
   WAITING: 'waiting',
@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS = {
   turnTimeout: 2000,
   clientOverride: true,
   oversightTimeoutMs: 30000,
+  fogOfWar: true,
 };
 
 class GameManager {
@@ -55,7 +56,7 @@ class GameManager {
     }
 
     const oldMode = this.settings.mode;
-    const allowedKeys = ['mode', 'turnTimeout'];
+    const allowedKeys = ['mode', 'turnTimeout', 'fogOfWar'];
     for (const key of allowedKeys) {
       if (settings[key] !== undefined) {
         this.settings[key] = settings[key];
@@ -130,11 +131,24 @@ class GameManager {
 
     this.pendingActions.clear();
 
-    this.emit('turn_started', {
-      turn: this.state.turn,
-      timeout: this.settings.turnTimeout,
-      state: this.getClientState(),
-    });
+    if (this.settings.fogOfWar) {
+      this.emit('turn_started', {
+        turn: this.state.turn,
+        timeout: this.settings.turnTimeout,
+        fogOfWar: true,
+        playerStates: {
+          0: this.getClientStateForPlayer(0),
+          1: this.getClientStateForPlayer(1),
+        },
+        spectatorState: this.getSpectatorState(),
+      });
+    } else {
+      this.emit('turn_started', {
+        turn: this.state.turn,
+        timeout: this.settings.turnTimeout,
+        state: this.getClientState(),
+      });
+    }
 
     if (this.settings.turnTimeout) {
       this.turnTimer = setTimeout(() => {
@@ -266,11 +280,35 @@ class GameManager {
     const clientState = this.getClientState();
     this.stateHistory.push(clientState);
 
-    this.emit('turn_processed', {
-      turn: turnNumber,
-      events: result.info.turnEvents,
-      state: clientState,
-    });
+    if (this.settings.fogOfWar) {
+      const vision0 = computeVision(this.state, 0);
+      const vision1 = computeVision(this.state, 1);
+      this.emit('turn_processed', {
+        turn: turnNumber,
+        fogOfWar: true,
+        playerStates: {
+          0: filterStateForPlayer(clientState, 0, vision0),
+          1: filterStateForPlayer(clientState, 1, vision1),
+        },
+        playerEvents: {
+          0: filterEventsForPlayer(result.info.turnEvents, 0, vision0),
+          1: filterEventsForPlayer(result.info.turnEvents, 1, vision1),
+        },
+        spectatorState: {
+          ...clientState,
+          _fogEnabled: true,
+          _vision0: Array.from(vision0),
+          _vision1: Array.from(vision1),
+        },
+        events: result.info.turnEvents,
+      });
+    } else {
+      this.emit('turn_processed', {
+        turn: turnNumber,
+        events: result.info.turnEvents,
+        state: clientState,
+      });
+    }
 
     if (this.state.gameOver) {
       this.endGame();
@@ -447,6 +485,34 @@ class GameManager {
       units: this.state.units,
       cities: this.state.cities,
       monuments: this.state.monuments,
+    };
+  }
+
+  /**
+   * Get fog-filtered client state for a specific player.
+   */
+  getClientStateForPlayer(playerId) {
+    const fullState = this.getClientState();
+    if (!fullState || !this.settings.fogOfWar) return fullState;
+
+    const visibleTiles = computeVision(this.state, playerId);
+    return filterStateForPlayer(fullState, playerId, visibleTiles);
+  }
+
+  /**
+   * Get spectator state with both players' vision borders.
+   */
+  getSpectatorState() {
+    const fullState = this.getClientState();
+    if (!fullState || !this.settings.fogOfWar) return fullState;
+
+    const vision0 = computeVision(this.state, 0);
+    const vision1 = computeVision(this.state, 1);
+    return {
+      ...fullState,
+      _fogEnabled: true,
+      _vision0: Array.from(vision0),
+      _vision1: Array.from(vision1),
     };
   }
 
