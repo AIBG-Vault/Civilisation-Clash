@@ -19,19 +19,19 @@ The logic layer is stateless with zero dependencies. You can run games headlessl
       { "x": 0, "y": 1, "type": "MOUNTAIN", "owner": null }
     ]
   },
-  "units": [{ "x": 10, "y": 5, "owner": 0, "type": "SOLDIER", "hp": 3, "canMove": true }],
+  "units": [{ "x": 10, "y": 5, "owner": 0, "type": "SOLDIER", "hp": 2, "canMove": true }],
   "cities": [{ "x": 2, "y": 7, "owner": 0 }],
-  "monument": {
-    "x": 12,
-    "y": 7,
-    "controlledBy": 0
-  }
+  "monuments": [
+    { "x": 12, "y": 4, "controlledBy": 0 },
+    { "x": 12, "y": 18, "controlledBy": null }
+  ]
 }
 ```
 
 - Units identified by position, one per tile
 - `tiles` is a flat array (`width * height`)
 - `owner` is `null`, `0`, or `1`
+- `monuments` is an array (1 for standard/blitz, 2 for tournament)
 - `controlledBy` is `null` if uncontrolled
 
 ## Standalone Logic
@@ -158,21 +158,22 @@ ws.send(JSON.stringify({ type: 'LOAD_SAVE', saveId: 'some-save-id' }));
 
 ## API Reference
 
-| Function              | Signature                                        | Description                 |
-| --------------------- | ------------------------------------------------ | --------------------------- |
-| `createInitialState`  | `(options)` -> `state`                           | New game                    |
-| `processTurn`         | `(state, actions)` -> `{newState, errors, info}` | Process one turn            |
-| `validateAction`      | `(state, teamId, action)` -> `{valid, reason}`   | Check one action            |
-| `generateMap`         | `(width, height, seed)` -> `map`                 | Generate map                |
-| `getTilesAtDistance1` | `(x, y)` -> `[{x, y}]`                           | 8 adjacent positions        |
-| `getTilesAtDistance2` | `(x, y)` -> `[{x, y}]`                           | 20 positions within range 2 |
-| `chebyshevDistance`   | `(x1, y1, x2, y2)` -> `number`                   | `max(\|dx\|, \|dy\|)`       |
-| `manhattanDistance`   | `(x1, y1, x2, y2)` -> `number`                   | `\|dx\| + \|dy\|`           |
-| `isInZoC`             | `(state, unit)` -> `boolean`                     | In enemy soldier ZoC?       |
-| `getTile`             | `(state, x, y)` -> `tile`                        | Tile at position            |
-| `getUnit`             | `(state, x, y)` -> `unit/null`                   | Unit at position            |
-| `getCity`             | `(state, x, y)` -> `city/null`                   | City at position            |
-| `isPassable`          | `(state, x, y)` -> `boolean`                     | Can units enter?            |
+| Function                | Signature                                        | Description                 |
+| ----------------------- | ------------------------------------------------ | --------------------------- |
+| `createInitialState`    | `(options)` -> `state`                           | New game                    |
+| `processTurn`           | `(state, actions)` -> `{newState, errors, info}` | Process one turn            |
+| `validateAction`        | `(state, teamId, action)` -> `{valid, reason}`   | Check one action            |
+| `generateMap`           | `(width, height, seed)` -> `map`                 | Generate map                |
+| `getTilesAtDistance1`   | `(x, y)` -> `[{x, y}]`                           | 8 adjacent positions        |
+| `getTilesAtDistance2`   | `(x, y)` -> `[{x, y}]`                           | 20 positions within range 2 |
+| `chebyshevDistance`     | `(x1, y1, x2, y2)` -> `number`                   | `max(\|dx\|, \|dy\|)`       |
+| `manhattanDistance`     | `(x1, y1, x2, y2)` -> `number`                   | `\|dx\| + \|dy\|`           |
+| `isInZoC`               | `(state, unit)` -> `boolean`                     | In enemy soldier ZoC?       |
+| `getTile`               | `(state, x, y)` -> `tile`                        | Tile at position            |
+| `getUnit`               | `(state, x, y)` -> `unit/null`                   | Unit at position            |
+| `getCity`               | `(state, x, y)` -> `city/null`                   | City at position            |
+| `isPassable`            | `(state, x, y)` -> `boolean`                     | Can units enter?            |
+| `getConnectedTerritory` | `(state, playerId)` -> `Set<"x,y">`              | City-connected territory    |
 
 ## Constants
 
@@ -180,12 +181,22 @@ ws.send(JSON.stringify({ type: 'LOAD_SAVE', saveId: 'some-save-id' }));
 
 | Unit    | cost | hp  | dmg | move | deathScore | ZoC     | ZoC immune |
 | ------- | ---- | --- | --- | ---- | ---------- | ------- | ---------- |
-| SOLDIER | 20   | 3   | 1   | 1    | 10         | range 2 | yes        |
+| SOLDIER | 20   | 2   | 1   | 1    | 10         | range 2 | yes        |
 | ARCHER  | 25   | 2   | 1   | 1    | 12         | --      | no         |
-| RAIDER  | 10   | 1   | 1   | 2    | 3          | --      | no         |
+| RAIDER  | 15   | 1   | 1   | 2    | 3          | --      | no         |
 
-**Economy**: FIELD_INCOME: 0.5, CITY_INCOME: 5, EXPAND_COST: 5, CITY_COST: 80
+**Counter Triangle** (damage multipliers):
 
-**Scoring**: DAMAGE_DEALT: 5, KILL_BONUS: 7, MONUMENT_PER_CITY: 3
+| Attacker \ Target | SOLDIER | ARCHER | RAIDER |
+| ----------------- | ------- | ------ | ------ |
+| SOLDIER           | 1×      | 1×     | 2×     |
+| ARCHER            | 2×      | 1×     | 1×     |
+| RAIDER            | 0×      | 2×     | 1×     |
 
-**Multipliers**: Turns 1-100: x1, 101-150: x1.5, 151-200: x2 (combat only, not monument)
+**Economy**: FIELD_INCOME: 0.5, CITY_INCOME: 5, EXPAND_COST: 5, CITY_COST: 80 (base, scales ×1.5 per built city), ROAD_COST: 15, PLUNDER_GOLD: 3
+
+**Unit Upkeep**: UPKEEP_BASE: 0.5, UPKEEP_GROWTH: 1.12, FREE_UNITS_PER_CITY: 3. Formula: `upkeep = 0.5 × (1.12^excess - 1) / 0.12` where excess = max(0, units - cities × 3). If gold goes negative, cheapest units are disbanded.
+
+**Scoring**: DAMAGE_DEALT: 5, KILL_BONUS: 7, MONUMENT_PER_CITY: 3 (score per city per monument per turn)
+
+**Monument**: Each controlled monument gives 3G/turn (MONUMENT_GOLD: 3) + 3 score per city on map per turn

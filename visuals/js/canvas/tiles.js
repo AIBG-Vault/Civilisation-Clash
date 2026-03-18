@@ -242,14 +242,6 @@ const Tiles = {
   },
 
   /**
-   * Draw a city
-   * @param {CanvasRenderingContext2D} ctx - Canvas context
-   * @param {number} x - Grid X
-   * @param {number} y - Grid Y
-   * @param {number} owner - Owner team
-   * @param {boolean} isCapital - Whether this is the capital city
-   */
-  /**
    * Draw a walled settlement with huts inside
    * @param {CanvasRenderingContext2D} ctx
    * @param {number} x - Grid X

@@ -98,7 +98,8 @@ You have `timeout` ms to respond. If you miss it, the turn processes without you
   "actions": [
     { "action": "MOVE", "from_x": 3, "from_y": 7, "to_x": 4, "to_y": 7 },
     { "action": "BUILD_UNIT", "city_x": 2, "city_y": 7, "unit_type": "SOLDIER" },
-    { "action": "EXPAND_TERRITORY", "x": 5, "y": 8 }
+    { "action": "EXPAND_TERRITORY", "x": 5, "y": 8 },
+    { "action": "BUILD_ROAD", "x": 3, "y": 7 }
   ]
 }
 ```
@@ -168,7 +169,7 @@ Emitted when a unit is killed (always follows a COMBAT event with `isKill: true`
 
 #### CAPTURE (territory raid)
 
-Emitted when a unit moves onto enemy territory, converting it to neutral:
+Emitted when a **non-raider** unit moves onto enemy territory, converting it to neutral (and stopping movement):
 
 ```json
 {
@@ -176,10 +177,27 @@ Emitted when a unit moves onto enemy territory, converting it to neutral:
   "data": {
     "tile": { "x": 10, "y": 6 },
     "previousOwner": 1,
-    "raidedBy": { "x": 10, "y": 6, "type": "RAIDER", "owner": 0 }
+    "raidedBy": { "x": 10, "y": 6, "type": "SOLDIER", "owner": 0 }
   }
 }
 ```
+
+#### PLUNDER (raider area denial)
+
+Emitted each turn for every raider on enemy territory. Raiders plunder a 3x3 area (Chebyshev ≤ 1) around their position, neutralizing enemy tiles and gaining 3G per tile:
+
+```json
+{
+  "type": "PLUNDER",
+  "data": {
+    "raider": { "x": 10, "y": 6, "owner": 0 },
+    "tilesPlundered": 5,
+    "goldGained": 15
+  }
+}
+```
+
+Raiders do **not** stop when entering enemy territory (unlike other units). City tiles are excluded from plunder.
 
 #### CITY_CAPTURED
 
@@ -199,19 +217,20 @@ Emitted when a soldier captures an enemy city:
 
 #### MONUMENT_CONTROL
 
-Emitted every turn during the scoring phase. The controller receives 3 score per city on the map.
+Emitted every turn during the scoring phase. The controller receives 3 gold per turn and score based on total cities.
 
 ```json
 {
   "type": "MONUMENT_CONTROL",
   "data": {
     "controlledBy": 0,
+    "goldAwarded": 3,
     "scoreAwarded": 6
   }
 }
 ```
 
-`controlledBy` is `0`, `1`, or `null`. `scoreAwarded` is `totalCities * 3`.
+`controlledBy` is `0`, `1`, or `null`. `goldAwarded` is flat 3G. `scoreAwarded` is `totalCities * 3`.
 
 ### GAME_OVER
 
@@ -238,9 +257,10 @@ The server auto-restarts after 3 seconds. Keep your bot running.
 ```
 
 - Units identified by position, not ID
-- Max distance: 1 (soldier, archer) or 2 (raider), Chebyshev
+- Max distance: 1 (soldier, archer) or 2 (raider), Chebyshev. Doubled when unit starts on a road tile.
 - Blocked if: in enemy soldier ZoC (unless unit is a soldier), archer already shot, target impassable or occupied
-- Moving onto enemy territory raids it (neutral) and stops further movement
+- Non-raider units moving onto enemy territory raid it (neutral) and stop further movement
+- Raiders move freely through enemy territory and plunder a 3x3 area each turn (3G per tile)
 - Soldiers moving onto enemy cities capture them
 
 ### BUILD_UNIT
@@ -249,7 +269,7 @@ The server auto-restarts after 3 seconds. Keep your bot running.
 { "action": "BUILD_UNIT", "city_x": 2, "city_y": 7, "unit_type": "SOLDIER" }
 ```
 
-- `unit_type`: `SOLDIER` (20G), `ARCHER` (25G), `RAIDER` (10G)
+- `unit_type`: `SOLDIER` (20G), `ARCHER` (25G), `RAIDER` (15G)
 - City must be yours, tile must be empty, you must have enough gold
 - New units cannot move on spawn turn
 
@@ -259,7 +279,7 @@ The server auto-restarts after 3 seconds. Keep your bot running.
 { "action": "BUILD_CITY", "x": 20, "y": 12 }
 ```
 
-- Cost: 80G
+- Cost: **80G × 1.5^n** where n = number of cities you've already built (capital doesn't count). First built city = 80G, second = 120G, third = 180G, etc.
 - Must be a field tile you own, no unit or city on it
 
 ### EXPAND_TERRITORY
@@ -270,6 +290,17 @@ The server auto-restarts after 3 seconds. Keep your bot running.
 
 - Cost: 5G
 - Target must be neutral, field type, adjacent to your territory (distance 1)
+- Adjacent territory must be **connected to one of your cities** — cut-off territory cannot be expanded from
+
+### BUILD_ROAD
+
+```json
+{ "action": "BUILD_ROAD", "x": 8, "y": 6 }
+```
+
+- Cost: 15G
+- Must be a field tile you own, no existing road
+- Units starting on a road tile get doubled movement
 
 ### PASS
 
@@ -307,7 +338,7 @@ The `state` object received in TURN_START and TURN_RESULT:
   },
 
   "units": [
-    { "x": 3, "y": 7, "owner": 0, "type": "SOLDIER", "hp": 3, "canMove": true },
+    { "x": 3, "y": 7, "owner": 0, "type": "SOLDIER", "hp": 2, "canMove": true },
     { "x": 5, "y": 7, "owner": 1, "type": "ARCHER", "hp": 2, "canMove": true },
     { "x": 8, "y": 3, "owner": 1, "type": "RAIDER", "hp": 1, "canMove": true }
   ],
@@ -317,18 +348,19 @@ The `state` object received in TURN_START and TURN_RESULT:
     { "x": 12, "y": 5, "owner": 1 }
   ],
 
-  "monument": {
-    "x": 7,
-    "y": 5,
-    "controlledBy": null
-  }
+  "monuments": [
+    { "x": 7, "y": 3, "controlledBy": null },
+    { "x": 7, "y": 7, "controlledBy": 0 }
+  ]
 }
 ```
 
 - Units identified by position. One unit per tile max.
 - `tiles` is a flat array of `width * height` entries. Types: `FIELD`, `MOUNTAIN`, `WATER`, `MONUMENT`.
 - `owner` is `null` (neutral), `0`, or `1`. Mountains/water are always `null`.
+- `hasRoad`: `true` if a road has been built on this tile. Roads persist through ownership changes.
 - `canMove`: `false` for newly spawned units and archers that shot this turn.
+- `monuments` is an array of monument objects. Standard/blitz has 1 (at center), tournament has 2 (side lanes).
 
 ## Bot Skeleton -- JavaScript
 
@@ -436,7 +468,7 @@ function generateActions(state, teamId) {
   }
 
   // Build random unit at first open city
-  const costs = { SOLDIER: 20, ARCHER: 25, RAIDER: 10 };
+  const costs = { SOLDIER: 20, ARCHER: 25, RAIDER: 15 };
   for (const city of myCities) {
     if (unitAt(city.x, city.y)) continue;
     const type = ['SOLDIER', 'ARCHER', 'RAIDER'][Math.floor(Math.random() * 3)];
@@ -495,7 +527,7 @@ def generate_actions(state, my_team):
             unit_positions.add((tx, ty))
             break
 
-    costs = {"SOLDIER": 20, "ARCHER": 25, "RAIDER": 10}
+    costs = {"SOLDIER": 20, "ARCHER": 25, "RAIDER": 15}
     gold = player["gold"]
     for city in my_cities:
         if (city["x"], city["y"]) in unit_positions:

@@ -343,12 +343,12 @@ const Panels = {
 
     if (stats.gold !== undefined) {
       const el = document.getElementById(`${prefix}-gold`);
-      if (el) el.textContent = stats.gold;
+      if (el) el.textContent = Number(stats.gold).toFixed(1);
     }
 
     if (stats.income !== undefined) {
       const el = document.getElementById(`${prefix}-income`);
-      if (el) el.textContent = `+${stats.income}`;
+      if (el) el.textContent = `+${Number(stats.income).toFixed(1)}`;
     }
 
     if (stats.score !== undefined) {
@@ -386,17 +386,39 @@ const Panels = {
       if (el) el.textContent = turnInfo.max;
     }
 
-    if (turnInfo.monumentOwner !== undefined) {
+    if (turnInfo.monumentOwners !== undefined) {
       const el = document.getElementById('monument-owner');
       if (el) {
-        if (turnInfo.monumentOwner === null) {
-          el.textContent = 'Contested';
+        const owners = turnInfo.monumentOwners;
+        if (owners.length === 0) {
+          el.textContent = 'None';
           el.className = 'text-slate-500';
+        } else if (owners.length === 1) {
+          // Single monument — same as before
+          if (owners[0].id === null) {
+            el.textContent = 'Contested';
+            el.className = 'text-slate-500';
+          } else {
+            el.textContent = owners[0].name || `Player ${owners[0].id + 1}`;
+            el.className =
+              owners[0].id === 0 ? 'text-team0 font-semibold' : 'text-team1 font-semibold';
+          }
         } else {
-          // Use provided name or fall back to Player 1/2
-          el.textContent = turnInfo.monumentOwnerName || `Player ${turnInfo.monumentOwner + 1}`;
+          // Multiple monuments — show count per controller
+          const p0 = owners.filter((o) => o.id === 0).length;
+          const p1 = owners.filter((o) => o.id === 1).length;
+          const contested = owners.filter((o) => o.id === null).length;
+          const parts = [];
+          if (p0 > 0) parts.push(`${owners.find((o) => o.id === 0).name}: ${p0}`);
+          if (p1 > 0) parts.push(`${owners.find((o) => o.id === 1).name}: ${p1}`);
+          if (contested > 0) parts.push(`Contested: ${contested}`);
+          el.textContent = parts.join(' | ');
           el.className =
-            turnInfo.monumentOwner === 0 ? 'text-team0 font-semibold' : 'text-team1 font-semibold';
+            p0 > p1
+              ? 'text-team0 font-semibold'
+              : p1 > p0
+                ? 'text-team1 font-semibold'
+                : 'text-slate-500';
         }
       }
     }

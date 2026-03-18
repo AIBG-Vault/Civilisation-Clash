@@ -805,19 +805,18 @@ const App = {
     }
 
     // Update turn info
-    // Get monument owner name from the displayed state
-    const monumentOwnerId = state.monument ? state.monument.controlledBy : null;
-    let monumentOwnerName = null;
-    if (monumentOwnerId !== null && state.players) {
-      const monumentPlayer = state.players.find((p) => p.id === monumentOwnerId);
-      monumentOwnerName = monumentPlayer?.name || `Player ${monumentOwnerId + 1}`;
-    }
+    // Get monument owners from the displayed state
+    const monuments = state.monuments || [];
+    const monumentOwners = monuments.map((m) => {
+      if (m.controlledBy === null) return { id: null, name: null };
+      const player = state.players?.find((p) => p.id === m.controlledBy);
+      return { id: m.controlledBy, name: player?.name || `Player ${m.controlledBy + 1}` };
+    });
 
     Panels.updateTurnInfo({
       current: state.turn,
       max: state.maxTurns || state.max_turns,
-      monumentOwner: monumentOwnerId,
-      monumentOwnerName: monumentOwnerName,
+      monumentOwners,
     });
 
     // Update build modal cities
@@ -914,11 +913,7 @@ const App = {
         { x: 10, y: 7, owner: 1, type: 'SOLDIER', hp: 3, can_move_next_turn: false },
         { x: 9, y: 5, owner: 1, type: 'ARCHER', hp: 1, can_move_next_turn: true },
       ],
-      monument: {
-        x: 7,
-        y: 5,
-        controlledBy: 0,
-      },
+      monuments: [{ x: 7, y: 5, controlledBy: 0 }],
     };
 
     this.handleGameState(mockState);

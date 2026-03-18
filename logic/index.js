@@ -3,7 +3,7 @@
  * Main entry point and exports
  */
 
-const { processTurn, cloneState, getScoreMultiplier, calculateIncome } = require('./processor');
+const { processTurn, cloneState, calculateIncome } = require('./processor');
 const {
   generateMap,
   generateTournamentMap,
@@ -13,6 +13,7 @@ const {
 const {
   validateAction,
   validateActions,
+  getCityCost,
   getTilesAtDistance1,
   getTilesAtDistance2,
   chebyshevDistance,
@@ -24,6 +25,7 @@ const {
   isPassable,
   isInZoC,
   isAdjacentToOwnTerritory,
+  getConnectedTerritory,
 } = require('./validation');
 const { renderState, printState, renderEvents, printEvents } = require('./terminal');
 const constants = require('./constants');
@@ -41,8 +43,8 @@ module.exports = {
   validateAction,
   validateMap,
   cloneState,
-  getScoreMultiplier,
   calculateIncome,
+  getCityCost,
 
   // Helper functions
   getTilesAtDistance1,
@@ -56,6 +58,7 @@ module.exports = {
   isPassable,
   isInZoC,
   isAdjacentToOwnTerritory,
+  getConnectedTerritory,
 
   // Terminal visualization
   renderState,

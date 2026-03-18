@@ -379,7 +379,7 @@ const ManualPlay = {
   },
 
   queueBuildCity(x, y) {
-    const cost = Pathfinding.ECONOMY.CITY_COST;
+    const cost = Pathfinding.getCityCost(this.gameState, this.playerId);
     if (this.projectedGold < cost) {
       Panels.addTerminalMessage(
         `Not enough gold for city (need ${cost}, have ${this.projectedGold})`,
@@ -479,7 +479,7 @@ const ManualPlay = {
       case 'EXPAND_TERRITORY':
         return Pathfinding.ECONOMY.EXPAND_COST;
       case 'BUILD_CITY':
-        return Pathfinding.ECONOMY.CITY_COST;
+        return Pathfinding.getCityCost(this.gameState, this.playerId);
       case 'BUILD_UNIT': {
         const stats = Pathfinding.UNIT_STATS[action.unit_type];
         return stats ? stats.cost : 0;

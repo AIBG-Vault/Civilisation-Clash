@@ -16,6 +16,16 @@ const Pathfinding = {
   ECONOMY: {
     EXPAND_COST: 5,
     CITY_COST: 80,
+    CITY_COST_FACTOR: 1.5,
+  },
+
+  /**
+   * Get the cost of the next city for a player (geometric scaling).
+   * Capital doesn't count — first built city costs 80G, second 120G, etc.
+   */
+  getCityCost(state, playerId) {
+    const built = Math.max(0, (state.cities || []).filter((c) => c.owner === playerId).length - 1);
+    return Math.round(this.ECONOMY.CITY_COST * Math.pow(this.ECONOMY.CITY_COST_FACTOR, built));
   },
 
   // 8-directional offsets (Chebyshev distance 1)
@@ -220,7 +230,46 @@ const Pathfinding = {
   },
 
   /**
-   * Get all neutral FIELD tiles adjacent to a player's territory.
+   * Get all territory tiles connected to any of the player's cities via owned tiles (BFS).
+   * Returns a Set of "x,y" strings.
+   */
+  getConnectedTerritory(state, playerId) {
+    const connected = new Set();
+    const queue = [];
+    const cities = state.cities || [];
+
+    for (const city of cities) {
+      if (city.owner !== playerId) continue;
+      const key = `${city.x},${city.y}`;
+      if (!connected.has(key)) {
+        connected.add(key);
+        queue.push({ x: city.x, y: city.y });
+      }
+    }
+
+    const w = state.map.width;
+    const h = state.map.height;
+    while (queue.length > 0) {
+      const { x, y } = queue.shift();
+      for (const { dx, dy } of this.OFFSETS) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!this._inBounds(nx, ny, w, h)) continue;
+        const key = `${nx},${ny}`;
+        if (connected.has(key)) continue;
+        const tile = state.map.tiles.find((t) => t.x === nx && t.y === ny);
+        if (tile && tile.owner === playerId) {
+          connected.add(key);
+          queue.push({ x: nx, y: ny });
+        }
+      }
+    }
+
+    return connected;
+  },
+
+  /**
+   * Get all neutral FIELD tiles adjacent to a player's city-connected territory.
    * These are valid targets for EXPAND_TERRITORY.
    * queuedExpands: optional array of {x,y} tiles already queued for expansion this turn.
    */
@@ -234,11 +283,42 @@ const Pathfinding = {
       for (const q of queuedExpands) queuedSet.add(`${q.x},${q.y}`);
     }
 
-    // Find all owned tiles + queued expansions, then check their neighbors
+    // Build connected territory set, including queued expansions as virtual owned tiles
+    const connected = this.getConnectedTerritory(state, playerId);
+    // Also include queued expands that connect to the connected set
+    if (queuedExpands) {
+      const queueCheck = [...queuedExpands];
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (let i = queueCheck.length - 1; i >= 0; i--) {
+          const q = queueCheck[i];
+          const key = `${q.x},${q.y}`;
+          if (connected.has(key)) {
+            queueCheck.splice(i, 1);
+            continue;
+          }
+          // Check if adjacent to connected
+          let adj = false;
+          for (const { dx, dy } of this.OFFSETS) {
+            if (connected.has(`${q.x + dx},${q.y + dy}`)) {
+              adj = true;
+              break;
+            }
+          }
+          if (adj) {
+            connected.add(key);
+            queueCheck.splice(i, 1);
+            changed = true;
+          }
+        }
+      }
+    }
+
+    // Find expandable neighbors of connected tiles
     for (const tile of state.map.tiles) {
-      const isOwned = tile.owner === playerId;
-      const isQueued = queuedSet.has(`${tile.x},${tile.y}`);
-      if (!isOwned && !isQueued) continue;
+      const key = `${tile.x},${tile.y}`;
+      if (!connected.has(key)) continue;
 
       for (const { dx, dy } of this.OFFSETS) {
         const nx = tile.x + dx;
@@ -269,7 +349,7 @@ const Pathfinding = {
    */
   getValidCityLocations(state, playerId) {
     const player = state.players?.find((p) => p.id === playerId);
-    if (!player || player.gold < this.ECONOMY.CITY_COST) return [];
+    if (!player || player.gold < this.getCityCost(state, playerId)) return [];
 
     return state.map.tiles
       .filter((tile) => {

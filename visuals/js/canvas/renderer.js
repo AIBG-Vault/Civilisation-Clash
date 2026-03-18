@@ -790,10 +790,11 @@ const Renderer = {
    * Draw monument
    */
   drawMonument(ctx) {
-    if (!this.gameState || !this.gameState.monument) return;
+    if (!this.gameState || !this.gameState.monuments) return;
 
-    const { monument } = this.gameState;
-    Units.drawMonument(ctx, monument.x, monument.y, monument.controlledBy);
+    for (const monument of this.gameState.monuments) {
+      Units.drawMonument(ctx, monument.x, monument.y, monument.controlledBy);
+    }
   },
 
   /**

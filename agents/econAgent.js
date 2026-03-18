@@ -14,10 +14,12 @@ const {
   ECONOMY,
   TERRAIN,
   validateAction,
+  getCityCost,
   getTilesAtDistance1,
   getUnit,
   chebyshevDistance,
   isInZoC,
+  getConnectedTerritory,
 } = require('../logic');
 
 /**
@@ -96,27 +98,32 @@ function getValidExpands(state, playerId) {
 
   const expands = [];
   const seen = new Set();
-  const ownedTiles = state.map.tiles.filter((t) => t.owner === playerId);
+  // Only expand from territory connected to a city
+  const connected = getConnectedTerritory(state, playerId);
+  const connectedTiles = state.map.tiles.filter(
+    (t) => t.owner === playerId && connected.has(`${t.x},${t.y}`)
+  );
   const capital = getCapital(state, playerId);
   const anchorX = capital ? capital.x : Math.floor(state.map.width / 2);
   const anchorY = capital ? capital.y : Math.floor(state.map.height / 2);
   const enemyX = getEnemySideX(state, playerId);
 
-  for (const tile of ownedTiles) {
+  for (const tile of connectedTiles) {
     const adjacent = getTilesAtDistance1(tile.x, tile.y);
     for (const pos of adjacent) {
       const key = `${pos.x},${pos.y}`;
       if (seen.has(key)) continue;
       seen.add(key);
 
-      const action = { action: ACTIONS.EXPAND_TERRITORY, x: pos.x, y: pos.y };
-      if (validateAction(state, playerId, action).valid) {
-        expands.push({
-          action,
-          dist: chebyshevDistance(pos.x, pos.y, anchorX, anchorY),
-          forwardDist: Math.abs(pos.x - enemyX),
-        });
-      }
+      const targetTile = state.map.tiles.find((t) => t.x === pos.x && t.y === pos.y);
+      if (!targetTile || targetTile.owner !== null) continue;
+      if (targetTile.type !== TERRAIN.FIELD) continue;
+
+      expands.push({
+        action: { action: ACTIONS.EXPAND_TERRITORY, x: pos.x, y: pos.y },
+        dist: chebyshevDistance(pos.x, pos.y, anchorX, anchorY),
+        forwardDist: Math.abs(pos.x - enemyX),
+      });
     }
   }
 
@@ -145,7 +152,7 @@ function getCapital(state, playerId) {
 
 function getValidCityLocations(state, playerId) {
   const player = state.players.find((p) => p.id === playerId);
-  if (player.gold < ECONOMY.CITY_COST) return [];
+  if (player.gold < getCityCost(state, playerId)) return [];
 
   const myCities = state.cities.filter((c) => c.owner === playerId);
   const capital = getCapital(state, playerId);
@@ -237,11 +244,22 @@ function scoreMoveAssault(state, unit, tx, ty) {
   const newForward = Math.abs(tx - enemyX);
   score += (curForward - newForward) * 8;
 
-  // Pull toward monument only when reasonably close
-  const curDistMon = chebyshevDistance(unit.x, unit.y, centerX, centerY);
-  if (curDistMon <= 10) {
-    const newDistMon = chebyshevDistance(tx, ty, centerX, centerY);
-    score += (curDistMon - newDistMon) * 5;
+  // Pull toward nearest monument when reasonably close
+  if (state.monuments) {
+    let bestMonDist = Infinity;
+    let bestMonX, bestMonY;
+    for (const m of state.monuments) {
+      const d = chebyshevDistance(unit.x, unit.y, m.x, m.y);
+      if (d < bestMonDist) {
+        bestMonDist = d;
+        bestMonX = m.x;
+        bestMonY = m.y;
+      }
+    }
+    if (bestMonDist <= 10) {
+      const newDistMon = chebyshevDistance(tx, ty, bestMonX, bestMonY);
+      score += (bestMonDist - newDistMon) * 5;
+    }
   }
 
   // Soldiers push toward nearby enemy cities
@@ -295,11 +313,12 @@ function generateActions(state, playerId) {
     // 1. Build cities aggressively — target 1 city per ~12 tiles, scaled by map size
     const scale = getMapScale(state);
     const targetCities = Math.min(Math.floor(6 * scale), Math.floor(myTiles.length / 12) + 1);
-    if (myCities.length < targetCities && gold >= ECONOMY.CITY_COST) {
+    const cityCostEcon = getCityCost(state, playerId);
+    if (myCities.length < targetCities && gold >= cityCostEcon) {
       const locs = getValidCityLocations(state, playerId);
       if (locs.length > 0) {
         actions.push(locs[0].action);
-        gold -= ECONOMY.CITY_COST;
+        gold -= cityCostEcon;
       }
     }
 
@@ -350,11 +369,12 @@ function generateActions(state, playerId) {
 
     // 1. Still build a city if we can and have few
     const scale = getMapScale(state);
-    if (myCities.length < Math.floor(3 * scale) && gold >= ECONOMY.CITY_COST + 60) {
+    const cityCostAssault = getCityCost(state, playerId);
+    if (myCities.length < Math.floor(3 * scale) && gold >= cityCostAssault + 60) {
       const locs = getValidCityLocations(state, playerId);
       if (locs.length > 0) {
         actions.push(locs[0].action);
-        gold -= ECONOMY.CITY_COST;
+        gold -= cityCostAssault;
       }
     }
 

@@ -22,6 +22,7 @@ const AGENT_NAMES = {
   smarter: 'Smart',
   smart2: 'Smart2',
   econ: 'Econ',
+  bestbot: 'BestBot',
   dumb: 'Dumb',
 };
 const playerName = args[2] || `${AGENT_NAMES[agentType] || 'Dumb'}Agent`;
@@ -38,6 +39,9 @@ try {
   } else if (agentType === 'econ') {
     agent = require('./econAgent');
     console.log('Loaded econ agent strategy (economy-first)');
+  } else if (agentType === 'bestbot') {
+    agent = require('./bestbot');
+    console.log('Loaded bestbot agent strategy (tournament-optimized)');
   } else {
     agent = require('./dumbAgent');
     console.log('Loaded dumb agent strategy');

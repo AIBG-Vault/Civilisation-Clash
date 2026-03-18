@@ -446,7 +446,7 @@ class GameManager {
       },
       units: this.state.units,
       cities: this.state.cities,
-      monument: this.state.monument,
+      monuments: this.state.monuments,
     };
   }
 
