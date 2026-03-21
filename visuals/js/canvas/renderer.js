@@ -596,9 +596,9 @@ const Renderer = {
     }
 
     // Client-side fog view override (keyboard 1/2/3 toggle)
-    if (this.fogViewMode !== null) {
-      this._applyFogView();
-    }
+    // When fogViewMode is set, override server fog data.
+    // When fogViewMode is null, also clear server fog data so spectator sees clean view by default.
+    this._applyFogView();
   },
 
   /**
@@ -659,11 +659,6 @@ const Renderer = {
     // Draw blood drop effects (damage indicators)
     if (this._damageEffects.length > 0) {
       this._drawDamageEffects(ctx, time);
-    }
-
-    // Draw fog view mode HUD indicator
-    if (this.fogViewMode !== null) {
-      this.drawFogViewHUD(ctx, rect);
     }
 
     // Draw selection/hover highlights
@@ -949,48 +944,6 @@ const Renderer = {
         this.fogViewMode === 0 ? '#22eedd' : this.fogViewMode === 1 ? '#e0e0e0' : '#88aaff';
       drawBorderForVision(this._visionSet, borderColor);
     }
-  },
-
-  /**
-   * Draw fog view mode HUD indicator in top-center
-   */
-  drawFogViewHUD(ctx, rect) {
-    const labels = {
-      0: 'Player 1 (Cyan) POV',
-      1: 'Player 2 (White) POV',
-      spectator: 'Spectator — Vision Borders',
-    };
-    const colors = { 0: '#22eedd', 1: '#e0e0e0', spectator: '#88aaff' };
-    const label = labels[this.fogViewMode] || '';
-    const color = colors[this.fogViewMode] || '#fff';
-
-    ctx.save();
-    ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    const tw = ctx.measureText(label).width;
-    const px = rect.width / 2;
-    const py = 10;
-
-    // Background pill
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    const pad = 8;
-    const rx = px - tw / 2 - pad,
-      ry = py - 3,
-      rw = tw + pad * 2,
-      rh = 22;
-    ctx.beginPath();
-    if (ctx.roundRect) {
-      ctx.roundRect(rx, ry, rw, rh, 6);
-    } else {
-      ctx.rect(rx, ry, rw, rh);
-    }
-    ctx.fill();
-
-    // Text
-    ctx.fillStyle = color;
-    ctx.fillText(label, px, py);
-    ctx.restore();
   },
 
   /**

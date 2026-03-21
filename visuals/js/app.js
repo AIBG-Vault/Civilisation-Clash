@@ -49,6 +49,10 @@ const App = {
     Panels.addTerminalMessage('Press T to toggle terminal', 'info');
     Panels.addTerminalMessage('Use mouse wheel to zoom, right-click drag to pan', 'info');
 
+    // Sync server URL input with current value
+    const urlInput = document.getElementById('server-url');
+    if (urlInput) urlInput.value = this.wsUrl;
+
     // Connect to WebSocket server
     this.connectWebSocket();
   },
@@ -63,6 +67,23 @@ const App = {
   /**
    * Connect to WebSocket server
    */
+  /**
+   * Change server URL and reconnect
+   */
+  changeServerUrl(url) {
+    url = url.trim();
+    if (!url) return;
+    if (this.ws) {
+      this.ws.onclose = null; // Prevent auto-reconnect to old URL
+      this.ws.close();
+      this.ws = null;
+    }
+    this.wsUrl = url;
+    this.reconnectAttempts = 0;
+    Panels.addTerminalMessage(`Switching to ${url}`, 'info');
+    this.connectWebSocket();
+  },
+
   connectWebSocket() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       return;
@@ -522,21 +543,19 @@ const App = {
   },
 
   /**
-   * Toggle fog of war via toolbar button
+   * Cycle fog view mode via toolbar button (visuals only, no server change)
+   * off → P0 → P1 → spectator → off
    */
   toggleFog() {
-    const fogCheckbox = document.getElementById('setting-fog');
-    if (fogCheckbox) fogCheckbox.checked = !fogCheckbox.checked;
-    // Send settings update to server
-    this.send({
-      type: 'GAME_CONTROL',
-      command: 'update_settings',
-      settings: { fogOfWar: fogCheckbox ? fogCheckbox.checked : false },
-    });
-    Panels.addTerminalMessage(
-      `Fog of War: ${fogCheckbox && fogCheckbox.checked ? 'ON' : 'OFF'}`,
-      'info'
-    );
+    if (typeof Renderer === 'undefined') return;
+    const mode = Renderer.fogViewMode;
+    const next = mode === null ? 0 : mode === 0 ? 1 : mode === 1 ? 'spectator' : null;
+    Renderer.fogViewMode = next;
+    Renderer._applyFogView();
+    Renderer._stateVersion++;
+
+    const labels = { 0: 'Player 1 POV', 1: 'Player 2 POV', spectator: 'Spectator borders' };
+    Panels.addTerminalMessage(`Fog view: ${labels[next] || 'OFF'}`, 'info');
   },
 
   /**
@@ -667,6 +686,9 @@ const App = {
         Renderer.setGameState(data.state);
         if (data.events) Renderer.applyTurnEvents(data.events);
         this.updateUI();
+
+        // Log events to terminal
+        if (data.events) this.logTurnEvents(data.events, data.state.turn);
       }
     }
 
@@ -692,9 +714,72 @@ const App = {
   handleGameOver(data) {
     this.stopTimer();
 
-    const winner = data.winner !== null ? (data.winner === 0 ? 'Cyan' : 'White') : 'Tie';
+    const winner = data.winner !== null ? (data.winner === 0 ? 'Cyan' : 'White') : 'Draw';
+    const reasons = { score: 'by score', elimination: 'by domination', tie: 'draw' };
+    const reason = reasons[data.reason] || data.reason || '';
 
-    Panels.addTerminalMessage(`Game Over! Winner: ${winner}`, 'success');
+    Panels.addTerminalMessage(`Game Over! ${winner} wins ${reason}`, 'success');
+  },
+
+  /**
+   * Log turn events to the terminal
+   */
+  logTurnEvents(events, turn) {
+    const team = (id) => (id === 0 ? 'Cyan' : 'White');
+
+    for (const e of events) {
+      switch (e.type) {
+        case 'COMBAT': {
+          const { phase, attacker, target, damage } = e.data;
+          const dmg = damage !== undefined ? damage : '?';
+          Panels.addTerminalMessage(
+            `T${turn} ${phase === 'archer' ? 'Ranged' : 'Melee'}: ${team(attacker.owner)} ${attacker.type} (${attacker.x},${attacker.y}) → ${team(target.owner)} ${target.type} (${target.x},${target.y}) [${dmg} dmg]`,
+            'action'
+          );
+          break;
+        }
+        case 'DEATH': {
+          const { unit } = e.data;
+          Panels.addTerminalMessage(
+            `T${turn} Kill: ${team(unit.owner)} ${unit.type} died at (${unit.x},${unit.y})`,
+            'error'
+          );
+          break;
+        }
+        case 'CITY_CAPTURED': {
+          const { city, newOwner } = e.data;
+          Panels.addTerminalMessage(
+            `T${turn} City captured at (${city.x},${city.y}) by ${team(newOwner)}`,
+            'warning'
+          );
+          break;
+        }
+        case 'MONUMENT_CONTROL': {
+          const { x, y, controlledBy } = e.data;
+          Panels.addTerminalMessage(
+            `T${turn} Monument (${x},${y}): ${controlledBy !== null ? team(controlledBy) : 'contested'}`,
+            'info'
+          );
+          break;
+        }
+        case 'PLUNDER': {
+          const { raider, tilesPlundered, goldGained } = e.data;
+          Panels.addTerminalMessage(
+            `T${turn} Plunder: ${team(raider.owner)} raider (${raider.x},${raider.y}) looted ${tilesPlundered} tiles (+${goldGained}G)`,
+            'warning'
+          );
+          break;
+        }
+        case 'DISBAND': {
+          const { unit, reason } = e.data;
+          Panels.addTerminalMessage(
+            `T${turn} Disband: ${team(unit.owner)} ${unit.type} at (${unit.x},${unit.y}) [${reason}]`,
+            'error'
+          );
+          break;
+        }
+      }
+    }
   },
 
   /**
