@@ -165,6 +165,17 @@ const Panels = {
     if (e.key === 'Enter' && mp) {
       ManualPlay.submitActions();
     }
+
+    // Fog view modes: 1 = P0 POV, 2 = P1 POV, 3 = spectator (both vision borders)
+    if (e.key === '1' && typeof Renderer !== 'undefined') {
+      Renderer.setFogViewMode(0);
+    }
+    if (e.key === '2' && typeof Renderer !== 'undefined') {
+      Renderer.setFogViewMode(1);
+    }
+    if (e.key === '3' && typeof Renderer !== 'undefined') {
+      Renderer.setFogViewMode('spectator');
+    }
   },
 
   /**

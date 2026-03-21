@@ -23,6 +23,15 @@ const AGENT_NAMES = {
   smart2: 'Smart2',
   econ: 'Econ',
   bestbot: 'BestBot',
+  best1: 'Best1',
+  best2: 'Best2',
+  best3: 'Best3',
+  best4: 'Best4',
+  best5: 'Best5',
+  best6: 'Best6',
+  best7: 'Best7',
+  best8: 'Best8',
+  best9: 'Best9',
   dumb: 'Dumb',
 };
 const playerName = args[2] || `${AGENT_NAMES[agentType] || 'Dumb'}Agent`;
@@ -42,6 +51,33 @@ try {
   } else if (agentType === 'bestbot') {
     agent = require('./bestbot');
     console.log('Loaded bestbot agent strategy (tournament-optimized)');
+  } else if (agentType === 'best1') {
+    agent = require('./best1');
+    console.log('Loaded best1 agent strategy (formation + territory defense)');
+  } else if (agentType === 'best2') {
+    agent = require('./best2');
+    console.log('Loaded best2 agent strategy (blitz aggression)');
+  } else if (agentType === 'best3') {
+    agent = require('./best3');
+    console.log('Loaded best3 agent strategy (adaptive counter-building)');
+  } else if (agentType === 'best4') {
+    agent = require('./best4');
+    console.log('Loaded best4 agent strategy (raider economic denial)');
+  } else if (agentType === 'best5') {
+    agent = require('./best5');
+    console.log('Loaded best5 agent strategy (lane commander)');
+  } else if (agentType === 'best6') {
+    agent = require('./best6');
+    console.log('Loaded best6 agent strategy (split pusher)');
+  } else if (agentType === 'best7') {
+    agent = require('./best7');
+    console.log('Loaded best7 agent strategy (city rush)');
+  } else if (agentType === 'best8') {
+    agent = require('./best8');
+    console.log('Loaded best8 agent strategy (mid fortress)');
+  } else if (agentType === 'best9') {
+    agent = require('./best9');
+    console.log('Loaded best9 agent strategy (lane commander+)');
   } else {
     agent = require('./dumbAgent');
     console.log('Loaded dumb agent strategy');

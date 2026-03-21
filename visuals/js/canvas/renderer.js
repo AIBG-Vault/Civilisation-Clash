@@ -41,6 +41,9 @@ const Renderer = {
   showGrid: true,
   showZoC: false,
 
+  // Fog view mode: null = off, 0 = P0 POV, 1 = P1 POV, 'spectator' = omniscient + both borders
+  fogViewMode: null,
+
   // Interaction state
   isPanning: false,
   isLeftDown: false,
@@ -591,6 +594,11 @@ const Renderer = {
       this._vision0Set = null;
       this._vision1Set = null;
     }
+
+    // Client-side fog view override (keyboard 1/2/3 toggle)
+    if (this.fogViewMode !== null) {
+      this._applyFogView();
+    }
   },
 
   /**
@@ -651,6 +659,11 @@ const Renderer = {
     // Draw blood drop effects (damage indicators)
     if (this._damageEffects.length > 0) {
       this._drawDamageEffects(ctx, time);
+    }
+
+    // Draw fog view mode HUD indicator
+    if (this.fogViewMode !== null) {
+      this.drawFogViewHUD(ctx, rect);
     }
 
     // Draw selection/hover highlights
@@ -744,7 +757,10 @@ const Renderer = {
       for (let x = 0; x < W; x++) {
         const tile = row[x];
         if (!tile) continue;
-        Tiles.drawTile(tctx, x, y, tile.type.toLowerCase(), tile.owner, {});
+        // In player fog view, hide territory ownership outside vision
+        const inVision = !fogVision || fogVision.has(`${x},${y}`);
+        const drawOwner = inVision ? tile.owner : null;
+        Tiles.drawTile(tctx, x, y, tile.type.toLowerCase(), drawOwner, {});
 
         // Fog overlay: desaturate non-visible tiles (player view only)
         if (fogVision && !fogVision.has(`${x},${y}`)) {
@@ -825,6 +841,10 @@ const Renderer = {
     if (!this.gameState || !this.gameState.cities) return;
 
     for (const city of this.gameState.cities) {
+      // In player fog view, hide enemy cities outside vision
+      if (this._visionSet && city.owner !== this.fogViewMode) {
+        if (!this._visionSet.has(`${city.x},${city.y}`)) continue;
+      }
       const isCapital = (this._capitalCache && this._capitalCache[`${city.x},${city.y}`]) || false;
       Tiles.drawCity(ctx, city.x, city.y, city.owner, isCapital);
     }
@@ -837,6 +857,7 @@ const Renderer = {
     if (!this.gameState || !this.gameState.monuments) return;
 
     for (const monument of this.gameState.monuments) {
+      // Monuments always visible including controller (tripwire mechanic)
       Units.drawMonument(ctx, monument.x, monument.y, monument.controlledBy);
     }
   },
@@ -848,6 +869,11 @@ const Renderer = {
     if (!this.gameState || !this.gameState.units) return;
 
     this.gameState.units.forEach((unit) => {
+      // In player fog view, hide enemy units outside vision
+      if (this._visionSet && unit.owner !== this.fogViewMode) {
+        if (!this._visionSet.has(`${unit.x},${unit.y}`)) return;
+      }
+
       const isSelected =
         this.selectedUnit && this.selectedUnit.x === unit.x && this.selectedUnit.y === unit.y;
 
@@ -864,7 +890,8 @@ const Renderer = {
    * Spectator view: teal border for P0, white border for P1.
    */
   drawVisionBorder(ctx) {
-    if (!this.gameState || !this.gameState._fogEnabled) return;
+    if (!this.gameState) return;
+    if (!this.gameState._fogEnabled && this.fogViewMode === null) return;
 
     const w = this.gameState.map.width;
     const h = this.gameState.map.height;
@@ -917,9 +944,53 @@ const Renderer = {
       drawBorderForVision(this._vision0Set, '#22eedd'); // bright teal for P0
       drawBorderForVision(this._vision1Set, '#e0e0e0'); // white for P1
     } else if (this._visionSet) {
-      // Player view — draw own vision border
-      drawBorderForVision(this._visionSet, '#88aaff'); // soft blue for own vision
+      // Player view — draw vision border in team color
+      const borderColor =
+        this.fogViewMode === 0 ? '#22eedd' : this.fogViewMode === 1 ? '#e0e0e0' : '#88aaff';
+      drawBorderForVision(this._visionSet, borderColor);
     }
+  },
+
+  /**
+   * Draw fog view mode HUD indicator in top-center
+   */
+  drawFogViewHUD(ctx, rect) {
+    const labels = {
+      0: 'Player 1 (Cyan) POV',
+      1: 'Player 2 (White) POV',
+      spectator: 'Spectator — Vision Borders',
+    };
+    const colors = { 0: '#22eedd', 1: '#e0e0e0', spectator: '#88aaff' };
+    const label = labels[this.fogViewMode] || '';
+    const color = colors[this.fogViewMode] || '#fff';
+
+    ctx.save();
+    ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const tw = ctx.measureText(label).width;
+    const px = rect.width / 2;
+    const py = 10;
+
+    // Background pill
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    const pad = 8;
+    const rx = px - tw / 2 - pad,
+      ry = py - 3,
+      rw = tw + pad * 2,
+      rh = 22;
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(rx, ry, rw, rh, 6);
+    } else {
+      ctx.rect(rx, ry, rw, rh);
+    }
+    ctx.fill();
+
+    // Text
+    ctx.fillStyle = color;
+    ctx.fillText(label, px, py);
+    ctx.restore();
   },
 
   /**
@@ -942,6 +1013,89 @@ const Renderer = {
    */
   toggleZoC() {
     this.showZoC = !this.showZoC;
+  },
+
+  /**
+   * Compute vision for a player client-side (mirrors logic/vision.js)
+   */
+  computeVisionClient(playerId) {
+    const state = this.gameState;
+    if (!state || !state.map) return new Set();
+
+    const visible = new Set();
+    const w = state.map.width;
+    const h = state.map.height;
+    const VISION = { SOLDIER: 2, ARCHER: 3, RAIDER: 2, CITY: 5 };
+
+    const addRadius = (cx, cy, radius) => {
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+            visible.add(`${nx},${ny}`);
+          }
+        }
+      }
+    };
+
+    // Own territory (radius 0 = tile itself)
+    for (const tile of state.map.tiles) {
+      if (tile.owner === playerId) visible.add(`${tile.x},${tile.y}`);
+    }
+
+    // Own units (per-type radius)
+    for (const unit of state.units) {
+      if (unit.owner === playerId) {
+        addRadius(unit.x, unit.y, VISION[unit.type] || 2);
+      }
+    }
+
+    // Own cities (radius 5)
+    for (const city of state.cities) {
+      if (city.owner === playerId) {
+        addRadius(city.x, city.y, VISION.CITY);
+      }
+    }
+
+    return visible;
+  },
+
+  /**
+   * Apply fog view mode — recompute vision sets from full game state
+   */
+  _applyFogView() {
+    if (!this.gameState) return;
+
+    if (this.fogViewMode === 0 || this.fogViewMode === 1) {
+      // Player POV — fog on non-visible tiles, hide enemy outside vision
+      this._visionSet = this.computeVisionClient(this.fogViewMode);
+      this._vision0Set = null;
+      this._vision1Set = null;
+    } else if (this.fogViewMode === 'spectator') {
+      // Omniscient + both vision borders
+      this._visionSet = null;
+      this._vision0Set = this.computeVisionClient(0);
+      this._vision1Set = this.computeVisionClient(1);
+    } else {
+      this._visionSet = null;
+      this._vision0Set = null;
+      this._vision1Set = null;
+    }
+  },
+
+  /**
+   * Set fog view mode (0 = P0, 1 = P1, 'spectator' = both borders, null = off)
+   * Pressing same mode again toggles off.
+   */
+  setFogViewMode(mode) {
+    if (this.fogViewMode === mode) {
+      this.fogViewMode = null;
+    } else {
+      this.fogViewMode = mode;
+    }
+    this._applyFogView();
+    this._stateVersion++; // Invalidate tile cache
   },
 
   // --- Manual Play Overlay Drawing ---

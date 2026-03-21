@@ -139,21 +139,21 @@ Soldiers and raiders auto-attack **all** adjacent enemies (distance 1) in Phase 
 
 ### Unit Upkeep
 
-Each city supports **3 units for free**. Beyond that, upkeep grows geometrically:
+Each city supports **1 unit for free**. Beyond that, upkeep grows geometrically:
 
 ```
-excess = max(0, total_units - cities × 3)
-upkeep = 0.5 × (1.12^excess - 1) / (1.12 - 1)
+excess = max(0, total_units - cities × 1)
+upkeep = 1.0 × (1.50^excess - 1) / (1.50 - 1)
 ```
 
 | Excess units | Upkeep/turn |
 | ------------ | ----------- |
 | 0            | 0G          |
-| 3            | 1.7G        |
-| 6            | 4.1G        |
-| 10           | 8.8G        |
-| 15           | 17.4G       |
-| 20           | 31.2G       |
+| 2            | 5.0G        |
+| 4            | 17.3G       |
+| 6            | 45.6G       |
+| 8            | 111.3G      |
+| 10           | 261.9G      |
 
 If gold goes negative, the cheapest units are automatically disbanded until the player is solvent. Upkeep is deducted during the Income phase.
 
@@ -230,7 +230,7 @@ By default, fog of war is **enabled**. Each player only sees tiles within their 
 ### What's Visible
 
 - **Terrain types**: always visible (map layout is public)
-- **Monuments**: always visible (landmarks)
+- **Monuments**: always visible including controller (tripwire — you always know when an enemy takes your monument, even without vision)
 - **Own units/cities/territory**: always visible
 - **Enemy units**: hidden outside your vision
 - **Enemy cities**: hidden outside your vision
@@ -238,7 +238,7 @@ By default, fog of war is **enabled**. Each player only sees tiles within their 
 
 ### Server Behavior
 
-When fog is enabled, `state.units`, `state.cities`, and `state.map.tiles[].owner` are **filtered per player**. Bots only receive information within their vision. The state also includes `_fogEnabled: true` and `_visibleTiles: ["x,y", ...]`.
+When fog is enabled, `state.units`, `state.cities`, and `state.map.tiles[].owner` are **filtered per player**. Bots only receive information within their vision. `state.monuments` is **never filtered** — monument positions and controllers are always public (tripwire mechanic). The state also includes `_fogEnabled: true` and `_visibleTiles: ["x,y", ...]`.
 
 ### Spectators
 

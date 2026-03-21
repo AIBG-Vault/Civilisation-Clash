@@ -350,7 +350,7 @@ The `state` object received in TURN_START and TURN_RESULT:
 - `canMove`: `false` for newly spawned units and archers that shot this turn.
 - `monuments` is an array of monument objects. Standard/blitz has 1 (at center), tournament has 2 (side lanes).
 
-**Fog of War**: When fog is enabled (default), `state.units` and `state.cities` only contain entries visible to your team. Territory ownership (`tiles[].owner`) is `null` for tiles outside your vision. The state includes `_fogEnabled: true` and `_visibleTiles` (array of `"x,y"` strings your team can see). Vision sources: own territory (self only), units (Soldier 2, Archer 3, Raider 2), cities (radius 5). See [game-mechanics.md](game-mechanics.md#fog-of-war) for details.
+**Fog of War**: When fog is enabled (default), `state.units` and `state.cities` only contain entries visible to your team. Territory ownership (`tiles[].owner`) is `null` for tiles outside your vision. `state.monuments` is always fully visible including `controlledBy` (tripwire mechanic — you always know when a monument changes hands). The state includes `_fogEnabled: true` and `_visibleTiles` (array of `"x,y"` strings your team can see). Vision sources: own territory (self only), units (Soldier 2, Archer 3, Raider 2), cities (radius 5). See [game-mechanics.md](game-mechanics.md#fog-of-war) for details.
 
 ## Bot Skeleton -- JavaScript
 

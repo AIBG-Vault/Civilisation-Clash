@@ -108,9 +108,9 @@ const ECONOMY = {
   PLUNDER_GOLD: 3, // Gold gained per tile plundered by raiders
   MONUMENT_GOLD: 3, // Gold per turn per controlled monument
   // Unit upkeep — geometrically growing cost per unit
-  UPKEEP_BASE: 0.5, // Base upkeep cost for the first excess unit
-  UPKEEP_GROWTH: 1.12, // Each additional unit costs 12% more upkeep than the last
-  FREE_UNITS_PER_CITY: 3, // Each city supports this many units for free (no upkeep)
+  UPKEEP_BASE: 1.0, // Base upkeep cost for the first excess unit
+  UPKEEP_GROWTH: 1.5, // Each additional unit costs 50% more upkeep than the last
+  FREE_UNITS_PER_CITY: 1, // Each city supports this many units for free (no upkeep)
 };
 
 // Counter triangle: damage multipliers [attacker_type][target_type]

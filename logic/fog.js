@@ -51,6 +51,7 @@ function filterStateForPlayer(state, playerId, visibleTiles) {
     map: { ...state.map, tiles: filteredTiles },
     units: filteredUnits,
     cities: filteredCities,
+    // monuments pass through unfiltered — always visible including controlledBy (tripwire mechanic)
     _visibleTiles: Array.from(visibleTiles),
     _fogEnabled: true,
   };
