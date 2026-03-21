@@ -20,7 +20,7 @@ const {
   calculateIncome,
   computeVision,
   filterStateForPlayer,
-  filterEventsForPlayer,
+
   MODES,
   TERRAIN,
   UNIT_TYPES,
@@ -1292,52 +1292,6 @@ describe('Fog of War - filterStateForPlayer', () => {
 
     const monumentTile = filtered.map.tiles.find((t) => t.x === 5 && t.y === 5);
     assert.strictEqual(monumentTile.type, TERRAIN.MONUMENT, 'Monument tile should keep its type');
-  });
-});
-
-describe('Fog of War - filterEventsForPlayer', () => {
-  it('MONUMENT_CONTROL events always visible', () => {
-    const events = [
-      { type: 'MONUMENT_CONTROL', data: { controlledBy: 1, goldAwarded: 3, scoreAwarded: 6 } },
-    ];
-    const filtered = filterEventsForPlayer(events, 0, new Set());
-    assert.strictEqual(filtered.length, 1, 'Monument events should always be visible');
-  });
-
-  it('COMBAT event visible if own unit involved', () => {
-    const events = [
-      {
-        type: 'COMBAT',
-        data: {
-          attacker: { x: 3, y: 3, owner: 0, type: 'SOLDIER' },
-          target: { x: 4, y: 3, owner: 1, type: 'RAIDER' },
-          damage: 1,
-          isKill: true,
-        },
-      },
-    ];
-    const filtered = filterEventsForPlayer(events, 0, new Set());
-    assert.strictEqual(filtered.length, 1, 'Combat with own unit should be visible');
-  });
-
-  it('COMBAT event hidden if no own units and outside vision', () => {
-    const events = [
-      {
-        type: 'COMBAT',
-        data: {
-          attacker: { x: 8, y: 8, owner: 1, type: 'SOLDIER' },
-          target: { x: 7, y: 8, owner: 1, type: 'RAIDER' },
-          damage: 1,
-          isKill: false,
-        },
-      },
-    ];
-    const filtered = filterEventsForPlayer(events, 0, new Set(['1,1']));
-    assert.strictEqual(
-      filtered.length,
-      0,
-      'Combat between enemies outside vision should be hidden'
-    );
   });
 });
 

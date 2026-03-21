@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { createInitialState, processTurn, validateAction, MODES, computeVision, filterStateForPlayer, filterEventsForPlayer } = require('../logic');
+const { createInitialState, processTurn, validateAction, MODES, computeVision, filterStateForPlayer } = require('../logic');
 
 const GAME_STATES = {
   WAITING: 'waiting',
@@ -291,8 +291,8 @@ class GameManager {
           1: filterStateForPlayer(clientState, 1, vision1),
         },
         playerEvents: {
-          0: filterEventsForPlayer(result.info.turnEvents, 0, vision0),
-          1: filterEventsForPlayer(result.info.turnEvents, 1, vision1),
+          0: result.info.turnEvents,
+          1: result.info.turnEvents,
         },
         spectatorState: {
           ...clientState,
