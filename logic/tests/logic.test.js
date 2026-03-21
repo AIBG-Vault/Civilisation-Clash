@@ -14,7 +14,6 @@ const {
   getCityCost,
   cloneState,
   getTilesAtDistance1,
-  getTilesAtDistance2,
   chebyshevDistance,
   manhattanDistance,
   isInZoC,
@@ -125,11 +124,6 @@ describe('Distance calculations', () => {
       const found = tiles.find((t) => t.x === exp.x && t.y === exp.y);
       assert.ok(found, `Expected tile at (${exp.x}, ${exp.y})`);
     }
-  });
-
-  it('getTilesAtDistance2 returns 20 tiles', () => {
-    const tiles = getTilesAtDistance2(5, 5);
-    assert.strictEqual(tiles.length, 20);
   });
 });
 

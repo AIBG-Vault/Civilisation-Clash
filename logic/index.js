@@ -15,7 +15,6 @@ const {
   validateActions,
   getCityCost,
   getTilesAtDistance1,
-  getTilesAtDistance2,
   chebyshevDistance,
   manhattanDistance,
   isInBounds,
@@ -50,7 +49,6 @@ module.exports = {
 
   // Helper functions
   getTilesAtDistance1,
-  getTilesAtDistance2,
   chebyshevDistance,
   manhattanDistance,
   isInBounds,

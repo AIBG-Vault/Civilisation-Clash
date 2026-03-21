@@ -311,14 +311,21 @@ if (require.main === module) {
     maxSaves = parseInt(maxSavesArg.split('=')[1]) || 20;
   }
 
-  console.log(`Settings: mode=${mode}, turnTimeout=${turnTimeout}ms, protected=${protectedMode}, maxSaves=${maxSaves}, fog=${fogOfWar}`);
+  // Parse port: --port=8080
+  let port = parseInt(process.env.PORT) || 8080;
+  const portArg = args.find(a => a.startsWith('--port='));
+  if (portArg) {
+    port = parseInt(portArg.split('=')[1]) || 8080;
+  }
+
+  console.log(`Settings: port=${port}, mode=${mode}, turnTimeout=${turnTimeout}ms, protected=${protectedMode}, maxSaves=${maxSaves}, fog=${fogOfWar}`);
   if (protectedMode) {
     console.log('PROTECTED MODE: Passwords required, client settings override disabled');
   }
   if (!fogOfWar) {
     console.log('FOG OF WAR DISABLED: Full information mode');
   }
-  createServer({ mode, turnTimeout, protectedMode, maxSaves, fogOfWar });
+  createServer({ port, mode, turnTimeout, protectedMode, maxSaves, fogOfWar });
 }
 
 module.exports = { createServer, CLIENT_MESSAGES, SERVER_MESSAGES };

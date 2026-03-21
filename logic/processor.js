@@ -13,7 +13,6 @@ const {
   SCORING,
   DAMAGE_MULTIPLIERS,
   DISTANCE_1_OFFSETS,
-  DISTANCE_2_OFFSETS,
 } = require('./constants');
 
 const {
@@ -26,7 +25,6 @@ const {
   chebyshevDistance,
   manhattanDistance,
   getTilesAtDistance1,
-  getTilesAtDistance2,
   isAdjacentToOwnTerritory,
   getConnectedTerritory,
 } = require('./validation');
@@ -127,10 +125,9 @@ function processArcherPhase(state, events) {
 
   for (const archer of archers) {
     // Find living enemies within range 2
-    // Counter triangle: archers CANNOT target raiders (too fast/evasive)
+    // Find targets — skip any with 0x damage multiplier (can't damage them)
     const enemies = state.units.filter((u) => {
       if (u.owner === archer.owner || u.hp <= 0) return false;
-      // Apply damage multiplier — 0x means can't target at all
       const mult = DAMAGE_MULTIPLIERS[UNIT_TYPES.ARCHER][u.type];
       if (mult <= 0) return false;
       const dist = chebyshevDistance(archer.x, archer.y, u.x, u.y);

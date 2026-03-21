@@ -1,65 +1,125 @@
 # AIBG - Civilization Clash
 
-## Description
+Turn-based 2-player strategy game for the 10th edition of **Artificial Intelligence Battleground (AIBG)**, a 20-hour hackathon organised by BEST Zagreb, 2026. Teams compete by writing bots that connect over WebSocket, receive the game state each turn, and respond with actions. This edition the topic is a civilizational duel. Two civilizations clash on a symmetrical island map through territorial control, economic management, and tactical combat. Every civilization has it's own perspective. Will your bot be the ultimate civilization and dominate the rest?
 
-Civilization Clash is a turn-based strategy game designed for the AI Battleground hackathon. Two AI-controlled civilizations compete for dominance on a symmetrical island map. Players expand territory, build cities, train units, and engage in tactical combat to earn Territory Points and Blood Points. The game features perfect information, allowing teams to develop sophisticated strategies during the 20-hour hackathon. Victory is achieved through territorial control, economic management, and strategic combat over 200 turns (or 50 in Blitz mode).
+## Game Overview
 
-## Game Features
+The competition uses tournament mode: a 25x23 map with 3 lanes separated by water rivers and 2 monuments in the side lanes. Both players start with one city in the mid lane. Fog of war is on by default, you only see tiles near your units and cities.
 
-### Core Mechanics
+Owned territory generates 0.5 gold per tile per turn; cities produce 5 gold per turn. You spend gold to expand territory (5G/tile), build new cities (80G, scaling x1.5 each), and train units. Unit upkeep grows geometrically past 1 free unit per city.
 
-- **Turn-based strategy** with 0.25-second decision time limit
-- **Symmetrical maps** ensuring fair competition
-- **Three unit types**: Soldiers, Archers, and Raiders with unique abilities
-- **Economic system**: Territory Points (TP) for income, Blood Points (BP) for combat rewards
-- **Monument control** for strategic advantage
-- **Zone of Control** mechanics for tactical positioning
+Three types form a hard counter triangle where every counter is a one-shot kill:
 
-### Game Modes
+- **Soldiers** (20G) melee, 2 HP. Project Zone of Control that freezes enemy archers and raiders. The only unit that captures cities. Crush raiders (2x), bounce off archers (take 2x damage).
+- **Archers** (25G) ranged (distance 2), 2 HP. Fire before movement, cannot move on turns they shoot. Pierce soldiers (2x), vulnerable to raiders in melee.
+- **Raiders** (15G) fast (movement 2), 1 HP. Plunder enemy territory for gold (3G/tile, 3x3 area). Assassinate archers (2x), deal 0 damage to soldiers.
 
-- **Standard**: 25×15 map, 200 turns, full feature set
-- **Blitz**: 15×11 map, 50 turns, faster gameplay
+Both players submit actions simultaneously. Each turn processes 6 phases in order: Income, Archer Fire, Movement, Melee, Build, Scoring. The game runs for 350 turns.
 
-## Current Implementation Status
+Victory: Highest score wins. Monuments award bonus gold and score to whoever controls them. A player also loses immediately if all their cities are captured.
 
-### ✅ MVP Complete
+See [Game Mechanics](docs/game-mechanics.md) for the full rules.
 
-- Basic game logic with soldiers and combat
-- No economy
-- WebSocket server supporting 2 players
-- Browser-based visualization
-- Automated test client
+## Quick Start
 
-### 🚧 In Development
+```bash
+# Install dependencies and start both servers
+bash install_and_start.sh          # Linux/Mac/Git Bash
+install_and_start.bat              # Windows
 
-- Additional unit types (Archers, Raiders)
-- Terrain variety (Mountains, Water)
-- Cities and city building
-- Monument and Blood Points system
-- Map generation
-- Authentication system
+# Connect two bots (in separate terminals)
+node agents/client.js dumb 0 # terminal 1
+node agents/client.js smart 1 # terminal 2
 
-## Documentation
+# Open the frontend
+# http://localhost:3000
+```
 
-- [Game Specification](claude/aibg-game-spec-final.md) - Detailed game rules and mechanics
-- [Architecture Design](claude/topic-architecture.md) - Technical implementation details
-- [MVP Implementation Guide](claude/completed/mvp-v1/creating_minimal_MVP.md) - Current implementation status
+The game starts automatically when both players connect. The server auto-restarts new games after each one finishes.
+
+## Running Example Bots
+
+```bash
+# JavaScript
+node agents/client.js [agent] [team] [name]
+node agents/client.js smarter 0 MyBot
+
+# Python (pip install websockets)
+python agents/python_example.py
+```
+
+Any language with WebSocket support works. See [Building a Client](docs/building-a-client.md) for the full JSON protocol and bot skeletons.
+
+## Server Flags
+
+```bash
+node server/server.js [flags]
+```
+
+| Flag           | Default | Description                       |
+| -------------- | ------- | --------------------------------- |
+| `--mode=X`     | `blitz` | `blitz`, `standard`, `tournament` |
+| `--tournament` |         | Shorthand for tournament mode     |
+| `--no-fog`     | fog on  | Disable fog of war                |
+| `--timeout=N`  | `2000`  | Turn timeout in ms                |
+| `--protected`  | off     | Per-team passwords, no overrides  |
+
+See [Server Reference](docs/server-reference.md) for the full list.
 
 ## Project Structure
 
 ```
 Civilisation-Clash/
-├── logic/               # Game logic (standalone, zero dependencies)
-│   ├── game.js         # Core game mechanics
-│   └── tests/          # Unit tests
-├── server/             # WebSocket server
-│   ├── server.js       # Main server
-│   └── test-client.js  # Automated test bot
-├── visuals/            # Frontend visualization
-│   └── index.html      # Browser-based game viewer
-├── claude/             # Design documents and specifications
-└── docs/               # Manuals and presentations (TODO)
+├── install_and_start.sh/.bat  # One-command setup and launch
+├── logic/                     # Game engine (standalone, zero dependencies)
+│   ├── index.js               # Main exports
+│   ├── constants.js            # All game constants (unit stats, economy, scoring)
+│   ├── processor.js            # Turn processing (6 phases)
+│   ├── validation.js           # Action validation + geometry helpers
+│   ├── map-generator.js        # Map generation (standard/blitz/tournament)
+│   ├── vision.js               # Fog of war vision computation
+│   ├── fog.js                  # State/event filtering for fog
+│   ├── terminal.js             # ASCII state rendering
+│   └── tests/                  # Unit tests
+├── server/                     # WebSocket game server
+│   ├── server.js               # WebSocket listener + message router
+│   ├── game-manager.js         # Game lifecycle, turns, saves, fog
+│   ├── connections.js          # Auth, broadcasting, per-team messaging
+│   ├── passwords.json          # Auth passwords
+│   └── saves/                  # Auto-saved game replays
+├── agents/                     # Bot clients
+│   ├── client.js               # WebSocket bot runner (JS)
+│   ├── python_example.py       # Example bot (Python)
+│   ├── dumbAgent.js            # Random-move bot
+│   ├── smarterAgent.js         # Smarter bot
+│   └── ...                     # Other agent strategies
+├── visuals/                    # Browser-based frontend
+│   ├── serve.js                # Static file server (node visuals/serve.js)
+│   ├── index.html              # Main page
+│   ├── js/                     # App logic, canvas renderer, UI panels
+│   ├── css/                    # Tailwind + custom styles
+│   └── assets/                 # Unit sprites, icons
+└── docs/                       # Documentation
+    ├── quickstart.md            # Setup and first game
+    ├── game-mechanics.md        # Game rules and mechanics
+    ├── building-a-client.md     # WebSocket protocol + bot building
+    ├── architecture.md          # Repository structure
+    ├── server-reference.md      # Server internals + CLI flags
+    ├── data-extraction.md       # Headless play + save harvesting
+    └── using-the-ui.md          # Spectator, replay, manual play
 ```
+
+## Documentation
+
+| Document                                       | Contents                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------- |
+| [Quickstart](docs/quickstart.md)               | Setup, run bots, server flags                                  |
+| [Game Mechanics](docs/game-mechanics.md)       | Rules, units, combat, economy, fog of war                      |
+| [Building a Client](docs/building-a-client.md) | WebSocket protocol, auth, actions, events, bot skeletons       |
+| [Repository Structure](docs/architecture.md)   | File map, architecture, per-file descriptions                  |
+| [Using the UI](docs/using-the-ui.md)           | Spectator, manual play, oversight, replay, keyboard shortcuts  |
+| [Server Reference](docs/server-reference.md)   | Server architecture, CLI flags, message types                  |
+| [Data Extraction](docs/data-extraction.md)     | Headless simulation, cross-language self-play, save harvesting |
 
 ## License [![CC BY-NC-SA 4.0][cc-by-nc-sa-shield]][cc-by-nc-sa]
 
@@ -70,186 +130,6 @@ Civilisation-Clash/
 This work is licensed under a
 [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License][cc-by-nc-sa].
 
-_Do not modify this section. All topics must use this license._
-
-## Usage
-
-This topic is being developed for:
-
-- **Zagreb 2026** _(AIBG X)_ - In Development
-
-## How to Run
-
-### Prerequisites
-
-- **Node.js v18+** - [Download](https://nodejs.org/)
-- **npm** (comes with Node.js)
-- **Web browser** (Chrome, Firefox, or Edge recommended)
-
-### Installation
-
-1. Clone the repository:
-
-   ```bash
-   git clone <repository-url>
-   cd Civilisation-Clash
-   ```
-
-2. Install server dependencies:
-   ```bash
-   cd server
-   npm install
-   ```
-
-### Running the Server
-
-1. Start the WebSocket server:
-   ```bash
-   cd server
-   npm start
-   ```
-   The server will run on `ws://localhost:8080`
-
-### Running the Visualization
-
-The frontend must be served via a web server (not opened directly as a file):
-
-**Option 1: VS Code Live Server**
-
-1. Install the "Live Server" extension in VS Code
-2. Right-click on `visuals/index.html`
-3. Select "Open with Live Server"
-
-**Option 2: Python HTTP Server**
-
-```bash
-cd visuals
-python -m http.server 3000
-```
-
-Then open `http://localhost:3000` in your browser
-
-**Option 3: Node.js HTTP Server**
-
-```bash
-npx http-server visuals -p 3000
-```
-
-### Running Test Agents
-
-1. In a new terminal, run the first test client:
-
-   ```bash
-   cd server
-   node test-client.js
-   ```
-
-2. In another terminal, run the second test client:
-   ```bash
-   cd server
-   node test-client.js
-   ```
-
-The game will automatically start when both clients connect. You can watch the game progress in the browser visualization.
-
-### Game Flow
-
-1. Server waits for 2 players to connect
-2. Game starts automatically when both players are connected
-3. Each turn:
-   - Server broadcasts current game state
-   - Players have 250ms to submit their actions
-   - Server processes actions and updates game state
-4. Game ends after 50 turns or when one player is eliminated
-5. Server resets and waits for new players
-
-## API Documentation
-
-### WebSocket Protocol
-
-#### Connection
-
-Connect to `ws://localhost:8080`
-
-#### Client → Server Messages
-
-**Authentication** (sent immediately after connection):
-
-```json
-{
-  "type": "AUTH",
-  "teamId": 0
-}
-```
-
-**Submit Actions** (sent each turn):
-
-```json
-{
-  "type": "SUBMIT_ACTIONS",
-  "actions": [{ "type": "MOVE", "unitId": 42, "targetX": 10, "targetY": 5 }]
-}
-```
-
-#### Server → Client Messages
-
-**Authentication Success**:
-
-```json
-{
-  "type": "AUTH_SUCCESS",
-  "teamId": 0
-}
-```
-
-**Game State** (sent each turn):
-
-```json
-{
-  "type": "GAME_STATE",
-  "yourTeamId": 0,
-  "state": {
-    "turn": 1,
-    "maxTurns": 50,
-    "units": [...],
-    "map": {...},
-    "gameOver": false
-  }
-}
-```
-
-**Game Over**:
-
-```json
-{
-  "type": "GAME_OVER",
-  "winner": 0,
-  "reason": "TURN_LIMIT"
-}
-```
-
 ## Development
 
-### Code Formatting
-
-The project uses Prettier for consistent code formatting. Git hooks automatically format code before commits.
-
-```bash
-# Format all files
-cd server
-npm run format
-
-# Check formatting
-npm run format:check
-```
-
-### Testing
-
-```bash
-cd logic
-node --test
-```
-
-## Troubleshooting
-
-- **"Cannot open file://" error**: The visualization must be served via HTTP, not opened directly from the file system
+Developed with <3 by **BEST Zagreb** for our _(AIBG X)_ (2016) event!

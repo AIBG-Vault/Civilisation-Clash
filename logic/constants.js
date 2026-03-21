@@ -162,25 +162,6 @@ const DISTANCE_1_OFFSETS = [
   { dx: 1, dy: 1 },
 ];
 
-// Direction offsets for distance 2 (additional 12 tiles beyond distance 1)
-const DISTANCE_2_ONLY_OFFSETS = [
-  { dx: -2, dy: -1 },
-  { dx: -2, dy: 0 },
-  { dx: -2, dy: 1 },
-  { dx: 2, dy: -1 },
-  { dx: 2, dy: 0 },
-  { dx: 2, dy: 1 },
-  { dx: -1, dy: -2 },
-  { dx: 0, dy: -2 },
-  { dx: 1, dy: -2 },
-  { dx: -1, dy: 2 },
-  { dx: 0, dy: 2 },
-  { dx: 1, dy: 2 },
-];
-
-// All distance 2 offsets (distance 1 + distance 2 only = 20 tiles)
-const DISTANCE_2_OFFSETS = [...DISTANCE_1_OFFSETS, ...DISTANCE_2_ONLY_OFFSETS];
-
 // Vision radii (Chebyshev distance) for fog of war
 const VISION = {
   [UNIT_TYPES.SOLDIER]: 2,
@@ -203,6 +184,4 @@ module.exports = {
   DAMAGE_MULTIPLIERS,
   VISION,
   DISTANCE_1_OFFSETS,
-  DISTANCE_2_ONLY_OFFSETS,
-  DISTANCE_2_OFFSETS,
 };

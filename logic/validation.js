@@ -10,7 +10,6 @@ const {
   TERRAIN_PROPS,
   ECONOMY,
   DISTANCE_1_OFFSETS,
-  DISTANCE_2_OFFSETS,
 } = require('./constants');
 
 /**
@@ -18,13 +17,6 @@ const {
  */
 function getTilesAtDistance1(x, y) {
   return DISTANCE_1_OFFSETS.map(({ dx, dy }) => ({ x: x + dx, y: y + dy }));
-}
-
-/**
- * Get tiles at distance 1 or 2 from a position
- */
-function getTilesAtDistance2(x, y) {
-  return DISTANCE_2_OFFSETS.map(({ dx, dy }) => ({ x: x + dx, y: y + dy }));
 }
 
 /**
@@ -403,7 +395,6 @@ module.exports = {
   getCityCost,
   validateExpandTerritory,
   getTilesAtDistance1,
-  getTilesAtDistance2,
   chebyshevDistance,
   manhattanDistance,
   isInBounds,

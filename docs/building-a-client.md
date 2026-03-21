@@ -1,51 +1,46 @@
 # Building a Client
 
-## Minimal Bot
-
-Connects, authenticates, passes every turn:
-
-```js
-const ws = new WebSocket(process.env.SERVER_URL || 'ws://localhost:8080');
-let teamId = null;
-
-ws.addEventListener('open', () => {
-  ws.send(
-    JSON.stringify({ type: 'AUTH', password: 'player', name: 'MinimalBot', preferredTeam: 0 })
-  );
-});
-
-ws.addEventListener('message', (event) => {
-  const msg = JSON.parse(event.data);
-
-  if (msg.type === 'AUTH_SUCCESS') {
-    teamId = msg.teamId;
-    console.log(`Authenticated as team ${teamId}`);
-  }
-
-  if (msg.type === 'TURN_START') {
-    const actions = [{ action: 'PASS' }];
-    ws.send(JSON.stringify({ type: 'SUBMIT_ACTIONS', actions }));
-  }
-
-  if (msg.type === 'GAME_OVER') {
-    console.log(`Game over. Winner: ${msg.winner}`);
-  }
-});
-```
-
-```bash
-node minimal-bot.js
-```
+Any language with WebSocket support works. The protocol is JSON over WebSocket.
 
 ## Connection
 
-| Setting  | Value                                                  |
-| -------- | ------------------------------------------------------ |
-| URL      | `ws://localhost:8080` (override with `SERVER_URL` env) |
-| Password | `player` (override with `PASSWORD` env)                |
-| Protocol | JSON over WebSocket                                    |
+| Setting  | Value                                                         |
+| -------- | ------------------------------------------------------------- |
+| URL      | `ws://localhost:8080` (override with `SERVER_URL` env)        |
+| Password | `player` in open mode (see [Authentication](#authentication)) |
+| Protocol | JSON over WebSocket                                           |
 
-Node.js 22+ has a built-in `WebSocket` global -- no packages needed.
+## Client Types and Permissions
+
+There are three client types. The password you send during authentication determines your role.
+
+### Player
+
+- **Password**: `player` in open mode, team-specific in protected mode
+- Can submit actions (SUBMIT_ACTIONS)
+- Receives fog-filtered game state when fog of war is on
+- Cannot control game settings in protected mode (`--protected`)
+- Maximum 2 players (one per team)
+- Gets TURN_START, TURN_RESULT, GAME_OVER, ACTIONS_RECEIVED messages
+
+### Spectator
+
+- **Password**: `spectator`
+- Cannot submit actions
+- Always receives full unfiltered state (sees everything, including both players' units, cities, territory)
+- When fog is on, state includes `_vision0` and `_vision1` arrays showing each player's vision
+- Can update settings and control the game (pause, resume, reset) in open mode
+- Unlimited spectators allowed
+- Gets the same lifecycle messages as players, but with full state
+
+### Oversight
+
+- **Password**: `oversight`
+- Special spectator that reviews both players' submitted actions before each turn processes
+- Receives OVERSIGHT_REVIEW with both players' action lists
+- Can modify or approve actions via OVERSIGHT_APPROVE
+- Safety timeout: if oversight does not respond within 30 seconds, the turn processes automatically
+- Only one oversight client at a time
 
 ## Authentication
 
@@ -60,24 +55,97 @@ Send immediately after connection opens:
 }
 ```
 
-- `preferredTeam` -- `0` or `1`. Assigned if available, otherwise the other team.
+- `preferredTeam`: `0` or `1`. Assigned if available, otherwise the other team.
+- If you do not authenticate within 5 seconds, the connection is closed.
 
-Response:
+Response on success:
 
 ```json
 {
   "type": "AUTH_SUCCESS",
   "teamId": 0,
   "name": "MyBot",
-  "isSpectator": false
+  "isSpectator": false,
+  "isOversight": false
 }
 ```
 
-In protected mode (`--protected`), each team has a unique password. The password determines your team.
+Response on failure:
+
+```json
+{
+  "type": "AUTH_FAILED",
+  "reason": "Invalid password"
+}
+```
+
+### Protected Mode
+
+When the server runs with `--protected`, each team has a unique password defined in `server/passwords.json`. The password determines your team (no `preferredTeam`). This prevents teams from impersonating each other during competition.
 
 ## Game Loop
 
+```mermaid
+sequenceDiagram
+    participant S as Server
+    participant P0 as Player 0
+    participant P1 as Player 1
+    participant Sp as Spectator
+
+    P0->>S: AUTH (password, name, preferredTeam)
+    S->>P0: AUTH_SUCCESS (teamId)
+    P1->>S: AUTH (password, name, preferredTeam)
+    S->>P1: AUTH_SUCCESS (teamId)
+    Sp->>S: AUTH (spectator password)
+    S->>Sp: AUTH_SUCCESS (isSpectator)
+
+    Note over S: Both players connected
+
+    S->>P0: GAME_STARTED
+    S->>P1: GAME_STARTED
+    S->>Sp: GAME_STARTED
+
+    loop Each Turn
+        S->>P0: TURN_START (filtered state)
+        S->>P1: TURN_START (filtered state)
+        S->>Sp: TURN_START (full state + vision borders)
+
+        P0->>S: SUBMIT_ACTIONS
+        S->>P0: ACTIONS_RECEIVED
+        P1->>S: SUBMIT_ACTIONS
+        S->>P1: ACTIONS_RECEIVED
+
+        Note over S: Process turn (or wait for timeout)
+
+        S->>P0: TURN_RESULT (filtered state + filtered events)
+        S->>P1: TURN_RESULT (filtered state + filtered events)
+        S->>Sp: TURN_RESULT (full state + all events)
+    end
+
+    S->>P0: GAME_OVER
+    S->>P1: GAME_OVER
+    S->>Sp: GAME_OVER
+```
+
+When fog is disabled, all clients receive the same full state.
+
+## Messages from Server
+
+### GAME_STARTED
+
+Sent to all clients when both players connect and a game begins.
+
+```json
+{
+  "type": "GAME_STARTED",
+  "mode": "blitz",
+  "turnTimeout": 2000
+}
+```
+
 ### TURN_START
+
+Sent at the beginning of each turn. You have `timeout` milliseconds to respond.
 
 ```json
 {
@@ -88,22 +156,11 @@ In protected mode (`--protected`), each team has a unique password. The password
 }
 ```
 
-You have `timeout` ms to respond. If you miss it, the turn processes without your actions.
+If you miss the timeout, the turn processes without your actions.
 
-### SUBMIT_ACTIONS
+### ACTIONS_RECEIVED
 
-```json
-{
-  "type": "SUBMIT_ACTIONS",
-  "actions": [
-    { "action": "MOVE", "from_x": 3, "from_y": 7, "to_x": 4, "to_y": 7 },
-    { "action": "BUILD_UNIT", "city_x": 2, "city_y": 7, "unit_type": "SOLDIER" },
-    { "action": "EXPAND_TERRITORY", "x": 5, "y": 8 }
-  ]
-}
-```
-
-Server responds with validation:
+Response after you submit actions. Shows which actions passed validation.
 
 ```json
 {
@@ -115,9 +172,11 @@ Server responds with validation:
 }
 ```
 
-Invalid actions are dropped. The `validation` array tells you which failed and why.
+Invalid actions are dropped silently. The `validation` array tells you which failed and why.
 
 ### TURN_RESULT
+
+Sent after the turn is processed. Contains updated state and events.
 
 ```json
 {
@@ -127,109 +186,6 @@ Invalid actions are dropped. The `validation` array tells you which failed and w
   "state": { ... }
 }
 ```
-
-`state` is the updated game state after all phases. `events` is an array describing what happened during the turn:
-
-#### COMBAT
-
-Emitted for each hit (archer shots in phase 2, melee hits in phase 4):
-
-```json
-{
-  "type": "COMBAT",
-  "data": {
-    "phase": "archer",
-    "attacker": { "x": 5, "y": 3, "type": "ARCHER", "owner": 0 },
-    "target": { "x": 7, "y": 4, "type": "RAIDER", "owner": 1 },
-    "damage": 1,
-    "isKill": true,
-    "scoreGain": 7
-  }
-}
-```
-
-`phase` is `"archer"` or `"melee"`. `scoreGain` is points awarded to the attacker's team (5 for damage, 7 for a killing blow).
-
-#### DEATH
-
-Emitted when a unit is killed (always follows a COMBAT event with `isKill: true`):
-
-```json
-{
-  "type": "DEATH",
-  "data": {
-    "unit": { "x": 7, "y": 4, "type": "RAIDER", "owner": 1 },
-    "deathScore": 3
-  }
-}
-```
-
-`deathScore` is points awarded to the **dead unit's owner** (soldier: 10, archer: 12, raider: 3).
-
-#### CAPTURE (territory raid)
-
-Emitted when a **non-raider** unit moves onto enemy territory, converting it to neutral (and stopping movement):
-
-```json
-{
-  "type": "CAPTURE",
-  "data": {
-    "tile": { "x": 10, "y": 6 },
-    "previousOwner": 1,
-    "raidedBy": { "x": 10, "y": 6, "type": "SOLDIER", "owner": 0 }
-  }
-}
-```
-
-#### PLUNDER (raider area denial)
-
-Emitted each turn for every raider on enemy territory. Raiders plunder a 3x3 area (Chebyshev ≤ 1) around their position, neutralizing enemy tiles and gaining 3G per tile:
-
-```json
-{
-  "type": "PLUNDER",
-  "data": {
-    "raider": { "x": 10, "y": 6, "owner": 0 },
-    "tilesPlundered": 5,
-    "goldGained": 15
-  }
-}
-```
-
-Raiders do **not** stop when entering enemy territory (unlike other units). City tiles are excluded from plunder.
-
-#### CITY_CAPTURED
-
-Emitted when a soldier captures an enemy city:
-
-```json
-{
-  "type": "CITY_CAPTURED",
-  "data": {
-    "city": { "x": 12, "y": 5 },
-    "previousOwner": 1,
-    "newOwner": 0,
-    "capturedBy": { "x": 12, "y": 5, "type": "SOLDIER" }
-  }
-}
-```
-
-#### MONUMENT_CONTROL
-
-Emitted every turn during the scoring phase. The controller receives 3 gold per turn and score based on total cities.
-
-```json
-{
-  "type": "MONUMENT_CONTROL",
-  "data": {
-    "controlledBy": 0,
-    "goldAwarded": 3,
-    "scoreAwarded": 6
-  }
-}
-```
-
-`controlledBy` is `0`, `1`, or `null`. `goldAwarded` is flat 3G. `scoreAwarded` is `totalCities * 3`.
 
 ### GAME_OVER
 
@@ -245,7 +201,130 @@ Emitted every turn during the scoring phase. The controller receives 3 gold per 
 - `winner`: `0`, `1`, or `null` (tie)
 - `reason`: `"score"`, `"elimination"`, or `"tie"`
 
-The server auto-restarts after 3 seconds. Keep your bot running.
+The server auto-restarts a new game after 3 seconds. Keep your bot running.
+
+### PLAYER_JOINED / PLAYER_LEFT
+
+```json
+{ "type": "PLAYER_JOINED", "team": 0, "name": "MyBot" }
+{ "type": "PLAYER_LEFT", "team": 0, "name": "MyBot" }
+```
+
+### SETTINGS_CHANGED
+
+Broadcast when game settings are updated (mode, timeout, fog).
+
+```json
+{
+  "type": "SETTINGS_CHANGED",
+  "settings": { "mode": "tournament", "turnTimeout": 2000, "fogOfWar": true }
+}
+```
+
+### ERROR
+
+```json
+{ "type": "ERROR", "error": "Not authenticated" }
+```
+
+### OVERSIGHT_REVIEW (oversight only)
+
+Sent to the oversight client after both players submit actions (or timeout).
+
+```json
+{
+  "type": "OVERSIGHT_REVIEW",
+  "turn": 5,
+  "actions": {
+    "team0": [ ... ],
+    "team1": [ ... ]
+  }
+}
+```
+
+## Messages to Server
+
+### AUTH
+
+See [Authentication](#authentication) above.
+
+### SUBMIT_ACTIONS (players only)
+
+```json
+{
+  "type": "SUBMIT_ACTIONS",
+  "actions": [
+    { "action": "MOVE", "from_x": 3, "from_y": 7, "to_x": 4, "to_y": 7 },
+    { "action": "BUILD_UNIT", "city_x": 2, "city_y": 7, "unit_type": "SOLDIER" },
+    { "action": "EXPAND_TERRITORY", "x": 5, "y": 8 }
+  ]
+}
+```
+
+Spectators cannot submit actions.
+
+### GET_STATE
+
+Request the current game state at any time.
+
+```json
+{ "type": "GET_STATE" }
+```
+
+Response: `{ "type": "GAME_STATE", "state": { ... }, "gameState": "playing" }`
+
+When fog of war is on, players receive a fog-filtered state (same filtering as TURN_START). Spectators receive the full unfiltered state.
+
+### GET_STATUS
+
+Request server status (game state, settings, connected clients).
+
+```json
+{ "type": "GET_STATUS" }
+```
+
+Response includes `gameState` ("waiting"/"playing"/"finished"), `settings`, `players`, `pendingSubmissions`.
+
+### GAME_CONTROL
+
+Control game flow. Available in open mode (no `--protected`) or for spectators.
+
+```json
+{ "type": "GAME_CONTROL", "command": "update_settings", "settings": { "mode": "tournament" } }
+{ "type": "GAME_CONTROL", "command": "reset" }
+{ "type": "GAME_CONTROL", "command": "pause" }
+{ "type": "GAME_CONTROL", "command": "resume" }
+```
+
+Updatable settings: `mode`, `turnTimeout`, `fogOfWar`.
+
+### LIST_SAVES / LOAD_SAVE
+
+```json
+{ "type": "LIST_SAVES" }
+```
+
+Response: `{ "type": "SAVES_LIST", "saves": [{ "id": "...", "mode": "blitz", "winner": 0, ... }] }`
+
+```json
+{ "type": "LOAD_SAVE", "saveId": "some-save-id" }
+```
+
+Response: `{ "type": "SAVE_LOADED", "states": [...], "players": [...], "winner": 0 }`
+
+### OVERSIGHT_APPROVE (oversight only)
+
+Approve or modify actions. If `actions` is omitted or null, the original actions are used.
+
+```json
+{
+  "type": "OVERSIGHT_APPROVE",
+  "actions": {
+    "team0": [ ... ],
+    "team1": [ ... ]
+  }
+}
+```
 
 ## Action Reference
 
@@ -278,7 +357,7 @@ The server auto-restarts after 3 seconds. Keep your bot running.
 { "action": "BUILD_CITY", "x": 20, "y": 12 }
 ```
 
-- Cost: **80G × 1.5^n** where n = number of cities you've already built (capital doesn't count). First built city = 80G, second = 120G, third = 180G, etc.
+- Cost: **80G x 1.5^n** where n = number of cities you have already built (capital does not count)
 - Must be a field tile you own, no unit or city on it
 
 ### EXPAND_TERRITORY
@@ -289,7 +368,8 @@ The server auto-restarts after 3 seconds. Keep your bot running.
 
 - Cost: 5G
 - Target must be neutral, field type, adjacent to your territory (distance 1)
-- Adjacent territory must be **connected to one of your cities** — cut-off territory cannot be expanded from
+- Adjacent territory must be **connected to one of your cities** (cut-off territory cannot be expanded from)
+- Expansions chain within a turn: each new tile counts for subsequent expansions
 
 ### PASS
 
@@ -297,9 +377,9 @@ The server auto-restarts after 3 seconds. Keep your bot running.
 { "action": "PASS" }
 ```
 
-Always valid.
+Always valid. Does nothing.
 
-## Game State
+## Game State Format
 
 The `state` object received in TURN_START and TURN_RESULT:
 
@@ -345,14 +425,145 @@ The `state` object received in TURN_START and TURN_RESULT:
 ```
 
 - Units identified by position. One unit per tile max.
-- `tiles` is a flat array of `width * height` entries. Types: `FIELD`, `MOUNTAIN`, `WATER`, `MONUMENT`.
+- `tiles` is a flat array of `width * height` entries. Types: `FIELD`, `MOUNTAIN`, `WATER`, `MONUMENT`. Only `FIELD` tiles are passable; `MOUNTAIN`, `WATER`, and `MONUMENT` are all impassable.
 - `owner` is `null` (neutral), `0`, or `1`. Mountains/water are always `null`.
 - `canMove`: `false` for newly spawned units and archers that shot this turn.
-- `monuments` is an array of monument objects. Standard/blitz has 1 (at center), tournament has 2 (side lanes).
+- `monuments` is an array. Standard/blitz has 1 (at center), tournament has 2 (side lanes).
 
-**Fog of War**: When fog is enabled (default), `state.units` and `state.cities` only contain entries visible to your team. Territory ownership (`tiles[].owner`) is `null` for tiles outside your vision. `state.monuments` is always fully visible including `controlledBy` (tripwire mechanic — you always know when a monument changes hands). The state includes `_fogEnabled: true` and `_visibleTiles` (array of `"x,y"` strings your team can see). Vision sources: own territory (self only), units (Soldier 2, Archer 3, Raider 2), cities (radius 5). See [game-mechanics.md](game-mechanics.md#fog-of-war) for details.
+## Events Reference
 
-## Bot Skeleton -- JavaScript
+Events appear in the `events` array of TURN_RESULT.
+
+### COMBAT
+
+Emitted for each hit (archer shots in Phase 2, melee hits in Phase 4):
+
+```json
+{
+  "type": "COMBAT",
+  "data": {
+    "phase": "archer",
+    "attacker": { "x": 5, "y": 3, "type": "ARCHER", "owner": 0 },
+    "target": { "x": 7, "y": 4, "type": "RAIDER", "owner": 1 },
+    "damage": 1,
+    "isKill": true,
+    "scoreGain": 7
+  }
+}
+```
+
+`phase` is `"archer"` or `"melee"`. `scoreGain` is 5 for a non-lethal hit, or 7 for a killing blow (7 replaces 5, they do not stack).
+
+### DEATH
+
+Emitted when a unit is killed:
+
+```json
+{
+  "type": "DEATH",
+  "data": {
+    "unit": { "x": 7, "y": 4, "type": "RAIDER", "owner": 1 },
+    "deathScore": 3
+  }
+}
+```
+
+`deathScore` is points awarded to the **dead unit's owner** (soldier: 10, archer: 12, raider: 3).
+
+### CAPTURE (territory raid)
+
+Emitted when a **non-raider** unit moves onto enemy territory, converting it to neutral:
+
+```json
+{
+  "type": "CAPTURE",
+  "data": {
+    "tile": { "x": 10, "y": 6 },
+    "previousOwner": 1,
+    "raidedBy": { "x": 10, "y": 6, "type": "SOLDIER", "owner": 0 }
+  }
+}
+```
+
+### PLUNDER (raider area denial)
+
+Emitted each turn for every raider on enemy territory. Raiders plunder a 3x3 area, neutralizing enemy tiles and gaining 3G per tile:
+
+```json
+{
+  "type": "PLUNDER",
+  "data": {
+    "raider": { "x": 10, "y": 6, "owner": 0 },
+    "tilesPlundered": 5,
+    "goldGained": 15
+  }
+}
+```
+
+### CITY_CAPTURED
+
+Emitted when a soldier captures an enemy city:
+
+```json
+{
+  "type": "CITY_CAPTURED",
+  "data": {
+    "city": { "x": 12, "y": 5 },
+    "previousOwner": 1,
+    "newOwner": 0,
+    "capturedBy": { "x": 12, "y": 5, "type": "SOLDIER" }
+  }
+}
+```
+
+### MONUMENT_CONTROL
+
+Emitted every turn during the scoring phase for each controlled monument:
+
+```json
+{
+  "type": "MONUMENT_CONTROL",
+  "data": {
+    "x": 12,
+    "y": 4,
+    "controlledBy": 0,
+    "goldAwarded": 3,
+    "scoreAwarded": 6
+  }
+}
+```
+
+`controlledBy` is `0`, `1`, or `null`. `scoreAwarded` is `totalCities * 3`.
+
+### DISBAND
+
+Emitted when a unit is disbanded due to negative gold (upkeep exceeds income):
+
+```json
+{
+  "type": "DISBAND",
+  "data": {
+    "unit": { "x": 5, "y": 3, "type": "RAIDER", "owner": 0 }
+  }
+}
+```
+
+## Fog of War
+
+When fog is enabled (default), the state your bot receives is filtered:
+
+- `state.units` only contains your units and enemy units within your vision
+- `state.cities` only contains your cities and enemy cities within your vision
+- `state.map.tiles[].owner` is `null` for tiles outside your vision
+- `state.monuments` is **never filtered** (tripwire mechanic: you always know who controls each monument)
+- `state._fogEnabled` is `true`
+- `state._visibleTiles` is an array of `"x,y"` strings your team can see
+
+Events are also filtered. You only see events that involve your units or occur within your vision. Monument events are always visible.
+
+Vision radii are documented in [Game Mechanics](#game-mechanics).
+
+## Bot Skeleton: JavaScript
 
 Full working bot with reconnect logic. Uses Node.js 22+ built-in WebSocket.
 
@@ -474,7 +685,7 @@ function generateActions(state, teamId) {
 module.exports = { generateActions };
 ```
 
-## Bot Skeleton -- Python
+## Bot Skeleton: Python
 
 Requires `pip install websockets`:
 
