@@ -74,13 +74,16 @@ function renderState(state, options = {}) {
   }
 
   // Monument info
-  const monumentCtrl = state.monument.controlledBy;
-  const monumentColor = monumentCtrl !== null ? getPlayerColor(monumentCtrl) : COLORS.GRAY;
-  const monumentStatus = monumentCtrl !== null ? `Player ${monumentCtrl}` : 'Uncontrolled';
-  if (useColors) {
-    lines.push(`${monumentColor}Monument: ${monumentStatus}${COLORS.RESET}`);
-  } else {
-    lines.push(`Monument: ${monumentStatus}`);
+  for (let mi = 0; mi < state.monuments.length; mi++) {
+    const monumentCtrl = state.monuments[mi].controlledBy;
+    const monumentColor = monumentCtrl !== null ? getPlayerColor(monumentCtrl) : COLORS.GRAY;
+    const monumentStatus = monumentCtrl !== null ? `Player ${monumentCtrl}` : 'Uncontrolled';
+    const label = state.monuments.length > 1 ? `Monument ${mi + 1}` : 'Monument';
+    if (useColors) {
+      lines.push(`${monumentColor}${label}: ${monumentStatus}${COLORS.RESET}`);
+    } else {
+      lines.push(`${label}: ${monumentStatus}`);
+    }
   }
 
   lines.push('');
@@ -135,10 +138,8 @@ function renderState(state, options = {}) {
         color = getPlayerColor(city.owner);
       } else if (tile?.type === TERRAIN.MONUMENT) {
         char = 'M';
-        color =
-          state.monument.controlledBy !== null
-            ? getPlayerColor(state.monument.controlledBy)
-            : COLORS.YELLOW;
+        const mon = state.monuments.find((m) => m.x === x && m.y === y);
+        color = mon && mon.controlledBy !== null ? getPlayerColor(mon.controlledBy) : COLORS.YELLOW;
       } else if (tile?.owner !== null) {
         // Owned territory - show in player color
         color = getPlayerColor(tile.owner);
@@ -240,11 +241,12 @@ function renderEvents(events, useColors = true) {
         break;
       }
       case 'MONUMENT_CONTROL': {
-        const { controlledBy, scoreAwarded } = event.data;
+        const { controlledBy, goldAwarded, scoreAwarded, x, y } = event.data;
         const color = useColors ? getPlayerColor(controlledBy) : '';
         const reset = useColors ? COLORS.RESET : '';
+        const pos = x !== undefined ? ` at (${x},${y})` : '';
         lines.push(
-          `  [MONUMENT] ${color}Player ${controlledBy}${reset} controls monument (+${scoreAwarded} score)`
+          `  [MONUMENT] ${color}Player ${controlledBy}${reset} controls monument${pos} (+${goldAwarded}G, +${scoreAwarded} score)`
         );
         break;
       }

@@ -34,12 +34,12 @@ const SERVER_MESSAGES = {
 };
 
 function createServer(options = {}) {
-  const { port = PORT, mode, turnTimeout = 2000, protectedMode = false, maxSaves = 20 } = options;
+  const { port = PORT, mode, turnTimeout = 2000, protectedMode = false, maxSaves = 20, fogOfWar = true } = options;
   const clientOverride = !protectedMode;
 
   const wss = new WebSocketServer({ port });
   const connectionManager = new ConnectionManager({ protectedMode });
-  const gameManager = new GameManager(connectionManager, { mode, clientOverride, turnTimeout, maxSaves });
+  const gameManager = new GameManager(connectionManager, { mode, clientOverride, turnTimeout, maxSaves, fogOfWar });
 
   gameManager.setEventCallback((event, data) => {
     handleGameEvent(connectionManager, event, data);
@@ -154,9 +154,18 @@ function handleAuth(ws, message, connectionManager, gameManager) {
 }
 
 function handleGetState(ws, connectionManager, gameManager) {
+  const info = connectionManager.getConnectionInfo(ws);
+  let state;
+  if (gameManager.settings.fogOfWar && info && !info.isSpectator && (info.teamId === 0 || info.teamId === 1)) {
+    state = gameManager.getClientStateForPlayer(info.teamId);
+  } else if (gameManager.settings.fogOfWar && info?.isSpectator) {
+    state = gameManager.getSpectatorState();
+  } else {
+    state = gameManager.getClientState();
+  }
   connectionManager.send(ws, {
     type: SERVER_MESSAGES.GAME_STATE,
-    state: gameManager.getClientState(),
+    state,
     gameState: gameManager.gameState,
   });
 }
@@ -221,11 +230,24 @@ function handleGameEvent(connectionManager, event, data) {
       break;
     case 'turn_started':
       console.log(`Turn ${data.turn} started`);
-      connectionManager.broadcast({ type: SERVER_MESSAGES.TURN_START, ...data });
+      if (data.fogOfWar) {
+        // Per-player filtered states
+        connectionManager.sendToTeam(0, { type: SERVER_MESSAGES.TURN_START, turn: data.turn, timeout: data.timeout, state: data.playerStates[0] });
+        connectionManager.sendToTeam(1, { type: SERVER_MESSAGES.TURN_START, turn: data.turn, timeout: data.timeout, state: data.playerStates[1] });
+        connectionManager.broadcastToSpectators({ type: SERVER_MESSAGES.TURN_START, turn: data.turn, timeout: data.timeout, state: data.spectatorState });
+      } else {
+        connectionManager.broadcast({ type: SERVER_MESSAGES.TURN_START, ...data });
+      }
       break;
     case 'turn_processed':
       console.log(`Turn ${data.turn} processed`);
-      connectionManager.broadcast({ type: SERVER_MESSAGES.TURN_RESULT, ...data });
+      if (data.fogOfWar) {
+        connectionManager.sendToTeam(0, { type: SERVER_MESSAGES.TURN_RESULT, turn: data.turn, events: data.playerEvents[0], state: data.playerStates[0] });
+        connectionManager.sendToTeam(1, { type: SERVER_MESSAGES.TURN_RESULT, turn: data.turn, events: data.playerEvents[1], state: data.playerStates[1] });
+        connectionManager.broadcastToSpectators({ type: SERVER_MESSAGES.TURN_RESULT, turn: data.turn, events: data.events, state: data.spectatorState });
+      } else {
+        connectionManager.broadcast({ type: SERVER_MESSAGES.TURN_RESULT, ...data });
+      }
       break;
     case 'game_ended':
       console.log(`Game ended! Winner: ${data.winner}, Reason: ${data.reason}`);
@@ -262,6 +284,7 @@ function handleGameEvent(connectionManager, event, data) {
 if (require.main === module) {
   const args = process.argv.slice(2);
   const protectedMode = args.includes('--protected');
+  const fogOfWar = !args.includes('--no-fog');
 
   // Parse mode: --mode=standard or --mode=blitz
   let mode = 'blitz'; // default
@@ -288,11 +311,21 @@ if (require.main === module) {
     maxSaves = parseInt(maxSavesArg.split('=')[1]) || 20;
   }
 
-  console.log(`Settings: mode=${mode}, turnTimeout=${turnTimeout}ms, protected=${protectedMode}, maxSaves=${maxSaves}`);
+  // Parse port: --port=8080
+  let port = parseInt(process.env.PORT) || 8080;
+  const portArg = args.find(a => a.startsWith('--port='));
+  if (portArg) {
+    port = parseInt(portArg.split('=')[1]) || 8080;
+  }
+
+  console.log(`Settings: port=${port}, mode=${mode}, turnTimeout=${turnTimeout}ms, protected=${protectedMode}, maxSaves=${maxSaves}, fog=${fogOfWar}`);
   if (protectedMode) {
     console.log('PROTECTED MODE: Passwords required, client settings override disabled');
   }
-  createServer({ mode, turnTimeout, protectedMode, maxSaves });
+  if (!fogOfWar) {
+    console.log('FOG OF WAR DISABLED: Full information mode');
+  }
+  createServer({ port, mode, turnTimeout, protectedMode, maxSaves, fogOfWar });
 }
 
 module.exports = { createServer, CLIENT_MESSAGES, SERVER_MESSAGES };

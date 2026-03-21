@@ -270,6 +270,15 @@ class ConnectionManager {
     return null;
   }
 
+  sendToTeam(teamId, message) {
+    const data = JSON.stringify(message);
+    for (const [ws, info] of this.connections) {
+      if (info.authenticated && !info.isSpectator && info.teamId === teamId && ws.readyState === ws.OPEN) {
+        ws.send(data);
+      }
+    }
+  }
+
   sendToOversight(message) {
     const client = this.getOversightClient();
     if (client) {

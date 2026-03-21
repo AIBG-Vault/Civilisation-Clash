@@ -1,35 +1,35 @@
 # Quickstart
 
-2-player turn-based strategy. Your bot connects over WebSocket, receives game state each turn, and responds with actions. No randomness, perfect information.
+Two civilizations on a symmetrical island. Each player starts with one city and a small territory. You expand territory to earn gold, build cities to grow your economy, and train three unit types (Soldiers, Archers, Raiders) to fight for map control. Monuments on the map award bonus gold and score to whoever controls them. The game runs for a fixed number of turns; highest score wins. A player also loses immediately if all their cities are captured.
+
+Your bot connects over WebSocket, receives the game state each turn, and responds with a list of actions (move units, build units, expand territory, build cities). See [Game Mechanics](#game-mechanics) for the full rules.
 
 ## Prerequisites
 
-- **Node.js 22+** (built-in `WebSocket` -- no dependencies needed)
+- **Node.js 22+** (built-in `WebSocket`, no dependencies needed for bots)
 
-## 1. Start the Server
+## 1. Start Everything
 
 ```bash
-cd server && node server.js
+bash install_and_start.sh        # Linux / Mac / Git Bash
+install_and_start.bat            # Windows
 ```
 
-Defaults: blitz mode, 2s turn timeout.
+This installs server dependencies and launches two components:
 
-| Flag              | Default | Description                                        |
-| ----------------- | ------- | -------------------------------------------------- |
-| `--mode=standard` | `blitz` | Standard: 25x15, 200 turns. Blitz: 15x11, 50 turns |
-| `--timeout=5000`  | `2000`  | Turn timeout in ms                                 |
-| `--protected`     | off     | Per-team passwords, no client setting overrides    |
-| `--max-saves=50`  | `20`    | Max saved replays                                  |
+- **Game server** (ws://localhost:8080) -- runs the game logic, handles bot connections
+- **Frontend server** (http://localhost:3000) -- serves the browser-based spectator UI
+
+Alternatively, after dependencies are installed (`cd server && npm install`), you can start them independently:
+
+```bash
+node server/server.js             # Game server (default: blitz, fog on)
+node visuals/serve.js             # Frontend server
+```
 
 ## 2. Open the Viewer
 
-The viewer needs HTTP serving (not `file://`):
-
-```bash
-npx serve .
-```
-
-Open `http://localhost:3000/visuals/index.html`. Auto-connects as spectator.
+Open `http://localhost:3000` in your browser. It auto-connects as spectator.
 
 ## 3. Run Example Bots
 
@@ -43,65 +43,116 @@ node agents/client.js dumb 1 Opponent
 
 Game starts when both teams connect. Format: `node agents/client.js <agent> <team> <name>`
 
-Agents: `dumb` (random), `smart` (heuristic), `smart2` (variant).
+Agents: `dumb` (random), `smart`/`smarter` (heuristic), `smart2` (variant), `econ` (economy-focused).
 
 ## 4. Build Your Own Bot
 
-Create a file that exports `generateActions(state, teamId)` returning an array of actions:
+Any language with WebSocket support works. Here is a complete Python bot that connects, authenticates, and plays (requires `pip install websockets`):
 
-```javascript
-function generateActions(state, teamId) {
-  const actions = [];
-  const myUnits = state.units.filter((u) => u.owner === teamId);
-  const myCities = state.cities.filter((c) => c.owner === teamId);
+```python
+import asyncio, json, random
+import websockets
 
-  // Move a unit
-  const unit = myUnits.find((u) => u.canMove);
-  if (unit) {
-    actions.push({
-      action: 'MOVE',
-      from_x: unit.x,
-      from_y: unit.y,
-      to_x: unit.x + 1,
-      to_y: unit.y,
-    });
-  }
+SERVER = "ws://localhost:8080"
+TEAM = 0        # 0 or 1
+NAME = "MyBot"
 
-  // Build a unit at a city
-  const city = myCities.find((c) => !state.units.some((u) => u.x === c.x && u.y === c.y));
-  if (city) {
-    actions.push({
-      action: 'BUILD_UNIT',
-      city_x: city.x,
-      city_y: city.y,
-      unit_type: 'SOLDIER',
-    });
-  }
+async def main():
+    async with websockets.connect(SERVER) as ws:
+        # Authenticate
+        await ws.send(json.dumps({
+            "type": "AUTH", "password": "player",
+            "name": NAME, "preferredTeam": TEAM,
+        }))
 
-  return actions;
-}
+        team_id = None
+        async for raw in ws:
+            msg = json.loads(raw)
 
-module.exports = { generateActions };
+            if msg["type"] == "AUTH_SUCCESS":
+                team_id = msg["teamId"]
+                print(f"Connected as team {team_id}")
+
+            elif msg["type"] == "TURN_START":
+                actions = generate_actions(msg["state"], team_id)
+                await ws.send(json.dumps({"type": "SUBMIT_ACTIONS", "actions": actions}))
+
+            elif msg["type"] == "GAME_OVER":
+                w = msg["winner"]
+                print(f"{'WON' if w == team_id else 'LOST' if w is not None else 'TIE'}")
+
+
+def generate_actions(state, team_id):
+    actions = []
+    my_units = [u for u in state["units"] if u["owner"] == team_id]
+    my_cities = [c for c in state["cities"] if c["owner"] == team_id]
+    player = next(p for p in state["players"] if p["id"] == team_id)
+    tiles = {(t["x"], t["y"]): t for t in state["map"]["tiles"]}
+    occupied = {(u["x"], u["y"]) for u in state["units"]}
+
+    # Move each unit to a random valid adjacent tile
+    dirs = [(-1,-1),(0,-1),(1,-1),(-1,0),(1,0),(-1,1),(0,1),(1,1)]
+    for unit in my_units:
+        if not unit.get("canMove", True):
+            continue
+        random.shuffle(dirs)
+        for dx, dy in dirs:
+            tx, ty = unit["x"] + dx, unit["y"] + dy
+            tile = tiles.get((tx, ty))
+            if tile and tile["type"] == "FIELD" and (tx, ty) not in occupied:
+                actions.append({
+                    "action": "MOVE",
+                    "from_x": unit["x"], "from_y": unit["y"],
+                    "to_x": tx, "to_y": ty,
+                })
+                occupied.discard((unit["x"], unit["y"]))
+                occupied.add((tx, ty))
+                break
+
+    # Build a soldier at each open city
+    for city in my_cities:
+        if (city["x"], city["y"]) in occupied:
+            continue
+        if player["gold"] >= 20:
+            actions.append({
+                "action": "BUILD_UNIT",
+                "city_x": city["x"], "city_y": city["y"],
+                "unit_type": "SOLDIER",
+            })
+            player["gold"] -= 20
+            occupied.add((city["x"], city["y"]))
+
+    return actions
+
+
+asyncio.run(main())
 ```
 
-Wire it into the client harness (`agents/client.js`) or write your own WebSocket connection. See [Building a Client](building-a-client.md) for the full protocol.
+Run it with `python mybot.py`. See [Building a Client](#building-a-client) for the full protocol and action reference.
 
-## 5. Environment Variables
-
-| Variable     | Default               | Description          |
-| ------------ | --------------------- | -------------------- |
-| `SERVER_URL` | `ws://localhost:8080` | Server WebSocket URL |
-| `PASSWORD`   | `player`              | Auth password        |
+## 5. Server Flags
 
 ```bash
-SERVER_URL=ws://192.168.1.100:8080 PASSWORD=secret node agents/client.js smart 0 MyBot
+node server/server.js --tournament --timeout=3000 --no-fog --port=9090
 ```
+
+| Flag            | Default | Description                                     |
+| --------------- | ------- | ----------------------------------------------- |
+| `--port=N`      | `8080`  | WebSocket server port (also via `PORT` env)     |
+| `--mode=X`      | `blitz` | `blitz`, `standard`, or `tournament`            |
+| `--tournament`  |         | Shorthand for `--mode=tournament`               |
+| `--standard`    |         | Shorthand for `--mode=standard`                 |
+| `--timeout=N`   | `2000`  | Turn timeout in ms                              |
+| `--protected`   | off     | Per-team passwords, no client setting overrides |
+| `--no-fog`      | fog on  | Disable fog of war (full information mode)      |
+| `--max-saves=N` | `20`    | Max saved replays                               |
 
 ## Next Steps
 
-| Document                                  | Covers                                               |
-| ----------------------------------------- | ---------------------------------------------------- |
-| [Game Mechanics](game-mechanics.md)       | Units, combat, economy, scoring, turn phases         |
-| [Building a Client](building-a-client.md) | Protocol, auth, actions, state format, bot skeletons |
-| [Using the UI](using-the-ui.md)           | Spectator, replay, manual play                       |
-| [Data & Training](data-extraction.md)     | Headless self-play, save format, logic API           |
+| Document                                | Covers                                              |
+| --------------------------------------- | --------------------------------------------------- |
+| [Game Mechanics](#game-mechanics)       | Units, combat, economy, scoring, turn phases, fog   |
+| [Building a Client](#building-a-client) | Protocol, auth, permissions, actions, bot skeletons |
+| [Using the UI](#using-the-ui)           | Spectator, replay, manual play, oversight           |
+| [Data & Training](#data-extraction)     | Headless self-play, save harvesting, logic API      |
+| [Server Reference](#server-reference)   | Server architecture, CLI flags, message types       |

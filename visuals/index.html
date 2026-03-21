@@ -4,28 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Civilization Clash</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="css/tailwind.css" />
+    <script src="assets/icons/lucide.min.js"></script>
     <link rel="stylesheet" href="css/styles.css" />
-    <script>
-      tailwind.config = {
-        darkMode: ['class', '[data-theme="dark"]'],
-        theme: {
-          extend: {
-            colors: {
-              team0: '#00ccaa',
-              team0Light: '#33ddc0',
-              team1: '#e0e0e0',
-              team1Light: '#ffffff',
-              field: '#90b060',
-              mountain: '#8b8b8b',
-              water: '#5b9bd5',
-              monument: '#ffd700',
-            },
-          },
-        },
-      };
-    </script>
   </head>
   <body class="bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 overflow-hidden">
     <!-- Main Container -->
@@ -292,7 +273,7 @@
             </button>
             <button
               id="gp-city"
-              class="cmd-btn flex-1 justify-center rounded-none"
+              class="cmd-btn flex-1 justify-center rounded-none rounded-r-md"
               title="City (C)"
               onclick="if(typeof ManualPlay!=='undefined') ManualPlay.setMode('build_city')"
             >
@@ -598,8 +579,16 @@
             <span id="p1-connection-dot" class="connection-dot"></span>
             <span class="text-xs text-team1 font-medium">P2</span>
             <button
-              id="btn-terminal"
+              id="btn-fog"
               class="control-btn w-6 h-6 ml-auto"
+              title="Toggle Fog of War"
+              onclick="App.toggleFog()"
+            >
+              <i data-lucide="cloud" class="w-3 h-3"></i>
+            </button>
+            <button
+              id="btn-terminal"
+              class="control-btn w-6 h-6"
               title="Terminal (T)"
               onclick="toggleTerminal()"
             >
@@ -631,11 +620,31 @@
             class="hidden border-t border-slate-200 dark:border-slate-700 pt-2 space-y-2"
           >
             <div>
+              <label class="block text-xs font-medium mb-1">Server URL</label>
+              <div class="flex items-center gap-1">
+                <input
+                  type="text"
+                  id="server-url"
+                  class="input-field flex-1 text-xs"
+                  value="ws://localhost:8080"
+                  placeholder="ws://host:port"
+                  onkeydown="if(event.key==='Enter'){App.changeServerUrl(this.value)}"
+                />
+                <button
+                  class="control-btn w-6 h-6"
+                  title="Reconnect"
+                  onclick="App.changeServerUrl(document.getElementById('server-url').value)"
+                >
+                  <i data-lucide="plug" class="w-3 h-3"></i>
+                </button>
+              </div>
+            </div>
+            <div>
               <label class="block text-xs font-medium mb-1">Game Mode</label>
               <select id="setting-map-size" class="input-field w-full text-xs">
                 <option value="standard">Standard (25x15, 200t)</option>
                 <option value="blitz">Blitz (15x11, 50t)</option>
-                <option value="tournament">Tournament (25x23, 250t)</option>
+                <option value="tournament">Tournament (25x23, 350t)</option>
               </select>
             </div>
             <div>
@@ -672,7 +681,7 @@
               />
             </div>
             <div>
-              <label class="block text-xs font-medium mb-1">Auto-Submit Buffer (ms)</label>
+              <label class="block text-xs font-medium mb-1">Manual Auto-Submit (ms)</label>
               <input
                 type="number"
                 id="setting-autosubmit-buffer"
@@ -690,6 +699,10 @@
                 value="500"
                 min="100"
               />
+            </div>
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-medium">Fog of War</label>
+              <input type="checkbox" id="setting-fog" class="w-4 h-4" checked />
             </div>
             <button
               class="action-btn primary w-full justify-center text-xs py-1"
@@ -771,7 +784,7 @@
               <button class="unit-card" data-unit="raider">
                 <div class="unit-icon bg-team0/20 text-team0">R</div>
                 <div class="font-medium">Raider</div>
-                <div class="text-xs text-slate-500 dark:text-slate-400">10 gold</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">15 gold</div>
               </button>
             </div>
             <div class="mb-4">
@@ -812,10 +825,10 @@
         <button
           class="inline-build-card"
           onclick="if(typeof ManualPlay!=='undefined') ManualPlay.queueBuildUnit(null,null,'RAIDER')"
-          title="Raider (10g)"
+          title="Raider (15g)"
         >
           <div class="inline-build-icon bg-blue-100 dark:bg-blue-900/30 text-team0">R</div>
-          <span class="text-xs">10g</span>
+          <span class="text-xs">15g</span>
         </button>
       </div>
     </div>

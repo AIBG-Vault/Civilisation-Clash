@@ -379,7 +379,7 @@ const ManualPlay = {
   },
 
   queueBuildCity(x, y) {
-    const cost = Pathfinding.ECONOMY.CITY_COST;
+    const cost = Pathfinding.getCityCost(App.gameState, this.teamId);
     if (this.projectedGold < cost) {
       Panels.addTerminalMessage(
         `Not enough gold for city (need ${cost}, have ${this.projectedGold})`,
@@ -479,7 +479,7 @@ const ManualPlay = {
       case 'EXPAND_TERRITORY':
         return Pathfinding.ECONOMY.EXPAND_COST;
       case 'BUILD_CITY':
-        return Pathfinding.ECONOMY.CITY_COST;
+        return Pathfinding.getCityCost(App.gameState, this.teamId);
       case 'BUILD_UNIT': {
         const stats = Pathfinding.UNIT_STATS[action.unit_type];
         return stats ? stats.cost : 0;
@@ -534,9 +534,11 @@ const ManualPlay = {
   advancePathPlans(state) {
     if (!state || !state.units) return;
 
-    const toRemove = [];
+    // Snapshot keys to avoid mutating the Map during iteration
+    const entries = Array.from(this.pathPlans.entries());
+    const newPlans = new Map();
 
-    for (const [key, plan] of this.pathPlans) {
+    for (const [key, plan] of entries) {
       // Find the unit at expected position
       const ep = plan.expectedPos;
       const unit = state.units.find(
@@ -548,19 +550,16 @@ const ManualPlay = {
           `Path plan cancelled: unit not found at (${ep.x},${ep.y})`,
           'warning'
         );
-        toRemove.push(key);
         continue;
       }
 
       if (plan.currentSegment >= plan.turnSegments.length) {
         // Plan complete
-        toRemove.push(key);
         continue;
       }
 
       const segment = plan.turnSegments[plan.currentSegment];
       if (!segment || segment.length === 0) {
-        toRemove.push(key);
         continue;
       }
 
@@ -574,7 +573,6 @@ const ManualPlay = {
           `Path blocked at (${dest.x},${dest.y}) — plan cancelled`,
           'warning'
         );
-        toRemove.push(key);
         continue;
       }
 
@@ -591,15 +589,16 @@ const ManualPlay = {
       plan.expectedPos = dest;
       plan.currentSegment++;
 
-      // Update key (unit will be at new position next turn)
-      toRemove.push(key);
+      // Re-key by new position if more segments remain
       if (plan.currentSegment < plan.turnSegments.length) {
-        this.pathPlans.set(`${dest.x},${dest.y}`, plan);
+        newPlans.set(`${dest.x},${dest.y}`, plan);
       }
     }
 
-    for (const key of toRemove) {
-      this.pathPlans.delete(key);
+    // Replace pathPlans with only the surviving plans
+    this.pathPlans.clear();
+    for (const [k, v] of newPlans) {
+      this.pathPlans.set(k, v);
     }
   },
 

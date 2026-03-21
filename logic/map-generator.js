@@ -10,7 +10,7 @@ const { TERRAIN, MODES, MODE_SETTINGS } = require('./constants');
  * @param {number} width - Map width
  * @param {number} height - Map height
  * @param {number} seed - Optional seed for deterministic generation
- * @returns {Object} Map object with tiles, cities, and monument
+ * @returns {Object} Map object with tiles, cities, and monuments
  */
 function generateMap(width, height, seed = null) {
   // Enforce odd dimensions so the center tile is the true rotational center
@@ -223,18 +223,14 @@ function generateMap(width, height, seed = null) {
     { x: player1StartX, y: startY, owner: 1 },
   ];
 
-  const monument = {
-    x: centerX,
-    y: centerY,
-    controlledBy: null,
-  };
+  const monuments = [{ x: centerX, y: centerY, controlledBy: null }];
 
-  return { width, height, tiles, cities, monument };
+  return { width, height, tiles, cities, monuments };
 }
 
 /**
  * Generate a 3-lane tournament map with wavy water rivers separating lanes.
- * Top/bot lanes run base-to-base independently; mid lane goes through monument.
+ * Top/bot lanes run base-to-base independently; monuments in side lanes, no monument in mid lane.
  * Lanes connect only at base areas (no mid-map crossover).
  */
 function generateTournamentMap(width, height, seed = null) {
@@ -421,15 +417,17 @@ function generateTournamentMap(width, height, seed = null) {
     }
   }
 
-  // --- Clear monument surroundings ---
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (dx === 0 && dy === 0) continue;
-      const y = centerY + dy;
-      const x = centerX + dx;
-      if (y >= 0 && y < height) {
-        if (x < centerX && x >= 0) leftHalf[y][x] = TERRAIN.FIELD;
-        else if (x === centerX && y < centerY) centerCol[y] = TERRAIN.FIELD;
+  // --- Clear monument surroundings (side-lane monuments) ---
+  const bottomLaneCenterY = height - 1 - topLaneCenterY;
+  for (const monY of [topLaneCenterY, bottomLaneCenterY]) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const y = monY + dy;
+        const x = centerX + dx;
+        if (y >= 0 && y < height) {
+          if (x < centerX && x >= 0) leftHalf[y][x] = TERRAIN.FIELD;
+          else if (x === centerX && y < centerY) centerCol[y] = TERRAIN.FIELD;
+        }
       }
     }
   }
@@ -489,7 +487,7 @@ function generateTournamentMap(width, height, seed = null) {
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       let terrain;
-      if (x === centerX && y === centerY) {
+      if (x === centerX && (y === topLaneCenterY || y === bottomLaneCenterY)) {
         terrain = TERRAIN.MONUMENT;
       } else if (x === centerX) {
         if (y < centerY) {
@@ -547,13 +545,12 @@ function generateTournamentMap(width, height, seed = null) {
     { x: player1StartX, y: centerY, owner: 1 },
   ];
 
-  const monument = {
-    x: centerX,
-    y: centerY,
-    controlledBy: null,
-  };
+  const monuments = [
+    { x: centerX, y: topLaneCenterY, controlledBy: null },
+    { x: centerX, y: bottomLaneCenterY, controlledBy: null },
+  ];
 
-  return { width, height, tiles, cities, monument };
+  return { width, height, tiles, cities, monuments };
 }
 
 /**
@@ -627,7 +624,7 @@ function createInitialState(options = {}) {
     },
     units: [],
     cities: mapData.cities,
-    monument: mapData.monument,
+    monuments: mapData.monuments,
   };
 }
 
@@ -653,12 +650,10 @@ function validateMap(map) {
     errors.push(`Expected ${expectedTiles} tiles, got ${map.tiles.length}`);
   }
 
-  // Check monument exists at center
-  const centerX = Math.floor(map.width / 2);
-  const centerY = Math.floor(map.height / 2);
-  const monumentTile = map.tiles.find((t) => t.x === centerX && t.y === centerY);
-  if (!monumentTile || monumentTile.type !== TERRAIN.MONUMENT) {
-    errors.push('Monument must be at center of map');
+  // Check at least one monument tile exists
+  const monumentTiles = map.tiles.filter((t) => t.type === TERRAIN.MONUMENT);
+  if (monumentTiles.length === 0) {
+    errors.push('Map must have at least one monument tile');
   }
 
   // Check starting cities

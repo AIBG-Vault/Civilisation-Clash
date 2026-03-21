@@ -3,7 +3,7 @@
  * Main entry point and exports
  */
 
-const { processTurn, cloneState, getScoreMultiplier, calculateIncome } = require('./processor');
+const { processTurn, cloneState, calculateIncome } = require('./processor');
 const {
   generateMap,
   generateTournamentMap,
@@ -13,8 +13,8 @@ const {
 const {
   validateAction,
   validateActions,
+  getCityCost,
   getTilesAtDistance1,
-  getTilesAtDistance2,
   chebyshevDistance,
   manhattanDistance,
   isInBounds,
@@ -24,8 +24,11 @@ const {
   isPassable,
   isInZoC,
   isAdjacentToOwnTerritory,
+  getConnectedTerritory,
 } = require('./validation');
 const { renderState, printState, renderEvents, printEvents } = require('./terminal');
+const { computeVision } = require('./vision');
+const { filterStateForPlayer, filterEventsForPlayer } = require('./fog');
 const constants = require('./constants');
 
 // Re-export everything
@@ -41,12 +44,11 @@ module.exports = {
   validateAction,
   validateMap,
   cloneState,
-  getScoreMultiplier,
   calculateIncome,
+  getCityCost,
 
   // Helper functions
   getTilesAtDistance1,
-  getTilesAtDistance2,
   chebyshevDistance,
   manhattanDistance,
   isInBounds,
@@ -56,6 +58,12 @@ module.exports = {
   isPassable,
   isInZoC,
   isAdjacentToOwnTerritory,
+  getConnectedTerritory,
+
+  // Fog of war
+  computeVision,
+  filterStateForPlayer,
+  filterEventsForPlayer,
 
   // Terminal visualization
   renderState,

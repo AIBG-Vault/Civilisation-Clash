@@ -6,7 +6,7 @@ const Units = {
   types: {
     SOLDIER: {
       asset: 'sword',
-      maxHp: 3,
+      maxHp: 2,
       figureCount: 8,
       figure: { head: '#aaaaaa', body: '#777777', legs: '#555555' },
     },

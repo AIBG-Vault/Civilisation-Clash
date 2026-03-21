@@ -14,10 +14,12 @@ const {
   ECONOMY,
   TERRAIN,
   validateAction,
+  getCityCost,
   getTilesAtDistance1,
   getUnit,
   chebyshevDistance,
   isInZoC,
+  getConnectedTerritory,
 } = require('../logic');
 
 /**
@@ -112,29 +114,29 @@ function getValidExpands(state, playerId) {
 
   const expands = [];
   const seen = new Set();
-  const ownedTiles = state.map.tiles.filter((t) => t.owner === playerId);
+  // Only expand from territory connected to a city
+  const connected = getConnectedTerritory(state, playerId);
+  const connectedTiles = state.map.tiles.filter(
+    (t) => t.owner === playerId && connected.has(`${t.x},${t.y}`)
+  );
   const enemyX = getEnemySideX(state, playerId);
 
-  for (const tile of ownedTiles) {
+  for (const tile of connectedTiles) {
     const adjacent = getTilesAtDistance1(tile.x, tile.y);
     for (const pos of adjacent) {
       const key = `${pos.x},${pos.y}`;
       if (seen.has(key)) continue;
       seen.add(key);
 
-      const action = {
-        action: ACTIONS.EXPAND_TERRITORY,
-        x: pos.x,
-        y: pos.y,
-      };
+      const targetTile = state.map.tiles.find((t) => t.x === pos.x && t.y === pos.y);
+      if (!targetTile || targetTile.owner !== null) continue;
+      if (targetTile.type !== TERRAIN.FIELD) continue;
+      if (player.gold < ECONOMY.EXPAND_COST) continue;
 
-      const result = validateAction(state, playerId, action);
-      if (result.valid) {
-        expands.push({
-          action,
-          forwardDist: Math.abs(pos.x - enemyX),
-        });
-      }
+      expands.push({
+        action: { action: ACTIONS.EXPAND_TERRITORY, x: pos.x, y: pos.y },
+        forwardDist: Math.abs(pos.x - enemyX),
+      });
     }
   }
 
@@ -148,7 +150,7 @@ function getValidExpands(state, playerId) {
  */
 function getValidCityLocations(state, playerId) {
   const player = state.players.find((p) => p.id === playerId);
-  if (player.gold < ECONOMY.CITY_COST) return [];
+  if (player.gold < getCityCost(state, playerId)) return [];
 
   const enemyX = getEnemySideX(state, playerId);
   const myCities = state.cities.filter((c) => c.owner === playerId);
@@ -222,11 +224,22 @@ function scoreMoveTarget(state, unit, targetX, targetY) {
   const newForwardDist = Math.abs(targetX - enemyX);
   score += (currentForwardDist - newForwardDist) * 8;
 
-  // Pull toward monument only when reasonably close
-  const curDistMon = chebyshevDistance(unit.x, unit.y, centerX, centerY);
-  if (curDistMon <= 10) {
-    const newDistMon = chebyshevDistance(targetX, targetY, centerX, centerY);
-    score += (curDistMon - newDistMon) * 5;
+  // Pull toward nearest monument when reasonably close
+  if (state.monuments) {
+    let bestMonDist = Infinity;
+    let bestMonX, bestMonY;
+    for (const m of state.monuments) {
+      const d = chebyshevDistance(unit.x, unit.y, m.x, m.y);
+      if (d < bestMonDist) {
+        bestMonDist = d;
+        bestMonX = m.x;
+        bestMonY = m.y;
+      }
+    }
+    if (bestMonDist <= 10) {
+      const newDistMon = chebyshevDistance(targetX, targetY, bestMonX, bestMonY);
+      score += (bestMonDist - newDistMon) * 5;
+    }
   }
 
   // Soldiers: prefer moving toward nearby enemy cities
@@ -310,12 +323,13 @@ function generateActions(state, playerId) {
   const scale = getMapScale(state);
   const targetCities = Math.min(Math.floor(4 * scale), Math.floor(myTiles.length / 15) + 1);
 
-  if (myCities.length < targetCities && remainingGold >= ECONOMY.CITY_COST) {
+  const cityCost = getCityCost(state, playerId);
+  if (myCities.length < targetCities && remainingGold >= cityCost) {
     const cityLocations = getValidCityLocations(state, playerId);
     if (cityLocations.length > 0) {
       const bestLocation = cityLocations[0];
       actions.push(bestLocation.action);
-      remainingGold -= ECONOMY.CITY_COST;
+      remainingGold -= cityCost;
     }
   }
 

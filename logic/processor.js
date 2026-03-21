@@ -11,13 +11,13 @@ const {
   TERRAIN_PROPS,
   ECONOMY,
   SCORING,
-  SCORE_MULTIPLIERS,
+  DAMAGE_MULTIPLIERS,
   DISTANCE_1_OFFSETS,
-  DISTANCE_2_OFFSETS,
 } = require('./constants');
 
 const {
   validateAction,
+  getCityCost,
   getTile,
   getUnit,
   getCity,
@@ -25,8 +25,8 @@ const {
   chebyshevDistance,
   manhattanDistance,
   getTilesAtDistance1,
-  getTilesAtDistance2,
   isAdjacentToOwnTerritory,
+  getConnectedTerritory,
 } = require('./validation');
 
 /**
@@ -34,22 +34,6 @@ const {
  */
 function cloneState(state) {
   return JSON.parse(JSON.stringify(state));
-}
-
-/**
- * Get score multiplier based on turn
- */
-function getScoreMultiplier(turn) {
-  if (turn >= SCORE_MULTIPLIERS.LATE.turn) return SCORE_MULTIPLIERS.LATE.multiplier;
-  if (turn >= SCORE_MULTIPLIERS.MID.turn) return SCORE_MULTIPLIERS.MID.multiplier;
-  return SCORE_MULTIPLIERS.EARLY.multiplier;
-}
-
-/**
- * Get monument score based on total cities in the game
- */
-function getMonumentScore(state) {
-  return state.cities.length * SCORING.MONUMENT_PER_CITY;
 }
 
 /**
@@ -76,13 +60,55 @@ function calculateIncome(state, playerId) {
 }
 
 /**
- * Phase 1: Income - Collect gold from territory and cities
+ * Calculate unit upkeep for a player (geometrically growing)
+ * Each city supports FREE_UNITS_PER_CITY units for free.
+ * Excess units cost UPKEEP_BASE * UPKEEP_GROWTH^(i-1) each, summed.
+ */
+function calculateUpkeep(state, playerId) {
+  const unitCount = state.units.filter((u) => u.owner === playerId).length;
+  const cityCount = state.cities.filter((c) => c.owner === playerId).length;
+  const freeUnits = cityCount * ECONOMY.FREE_UNITS_PER_CITY;
+  const excess = Math.max(0, unitCount - freeUnits);
+  if (excess <= 0) return 0;
+
+  // Geometric series: sum = base * (growth^excess - 1) / (growth - 1)
+  const { UPKEEP_BASE: base, UPKEEP_GROWTH: growth } = ECONOMY;
+  return (base * (Math.pow(growth, excess) - 1)) / (growth - 1);
+}
+
+/**
+ * Phase 1: Income - Collect gold from territory and cities, deduct unit upkeep
  */
 function processIncomePhase(state, events) {
   for (const player of state.players) {
     const income = calculateIncome(state, player.id);
-    player.gold += income;
-    player.income = income;
+    const upkeep = calculateUpkeep(state, player.id);
+    const netIncome = income - upkeep;
+    player.gold += netIncome;
+    player.income = netIncome;
+
+    // If gold goes negative, disband cheapest units until solvent
+    while (player.gold < 0) {
+      const playerUnits = state.units.filter((u) => u.owner === player.id);
+      if (playerUnits.length === 0) break;
+
+      // Disband cheapest unit first (raiders → soldiers → archers)
+      playerUnits.sort((a, b) => UNIT_STATS[a.type].cost - UNIT_STATS[b.type].cost);
+      const disbanded = playerUnits[0];
+      state.units = state.units.filter((u) => u !== disbanded);
+
+      // Refund half the upkeep saved and recalculate
+      const newUpkeep = calculateUpkeep(state, player.id);
+      player.gold += upkeep - newUpkeep; // Restore the upkeep difference
+
+      events.push({
+        type: 'DISBAND',
+        data: {
+          unit: { x: disbanded.x, y: disbanded.y, type: disbanded.type, owner: player.id },
+          reason: 'upkeep',
+        },
+      });
+    }
   }
 }
 
@@ -96,12 +122,14 @@ function processArcherPhase(state, events) {
     const j = Math.floor(Math.random() * (i + 1));
     [archers[i], archers[j]] = [archers[j], archers[i]];
   }
-  const multiplier = getScoreMultiplier(state.turn);
 
   for (const archer of archers) {
     // Find living enemies within range 2
+    // Find targets — skip any with 0x damage multiplier (can't damage them)
     const enemies = state.units.filter((u) => {
       if (u.owner === archer.owner || u.hp <= 0) return false;
+      const mult = DAMAGE_MULTIPLIERS[UNIT_TYPES.ARCHER][u.type];
+      if (mult <= 0) return false;
       const dist = chebyshevDistance(archer.x, archer.y, u.x, u.y);
       return dist >= 1 && dist <= UNIT_STATS[UNIT_TYPES.ARCHER].rangedRange;
     });
@@ -119,7 +147,9 @@ function processArcherPhase(state, events) {
     });
 
     const target = enemies[0];
-    const damage = UNIT_STATS[UNIT_TYPES.ARCHER].damage;
+    const baseDamage = UNIT_STATS[UNIT_TYPES.ARCHER].damage;
+    const mult = DAMAGE_MULTIPLIERS[UNIT_TYPES.ARCHER][target.type];
+    const damage = Math.floor(baseDamage * mult);
 
     // Apply damage immediately (sequential — allows archers to spread damage)
     target.hp -= damage;
@@ -130,7 +160,7 @@ function processArcherPhase(state, events) {
     // Score for damage
     const attackerOwner = state.players.find((p) => p.id === archer.owner);
     const isKill = target.hp <= 0;
-    const scoreGain = Math.floor((isKill ? SCORING.KILL_BONUS : SCORING.DAMAGE_DEALT) * multiplier);
+    const scoreGain = isKill ? SCORING.KILL_BONUS : SCORING.DAMAGE_DEALT;
     attackerOwner.score += scoreGain;
 
     events.push({
@@ -244,8 +274,12 @@ function processMovementPhase(state, actions, events) {
       }
     }
 
-    // Check for territory raiding
-    if (targetTile.owner !== null && targetTile.owner !== playerId) {
+    // Check for territory raiding (non-raiders only — raiders plunder in bulk below)
+    if (
+      unit.type !== UNIT_TYPES.RAIDER &&
+      targetTile.owner !== null &&
+      targetTile.owner !== playerId
+    ) {
       // Raid: make neutral and stop movement
       const previousOwner = targetTile.owner;
       targetTile.owner = null;
@@ -261,14 +295,44 @@ function processMovementPhase(state, actions, events) {
       });
     }
   }
+
+  // --- Raider plunder pass: every raider plunders 3x3 around its position ---
+  for (const unit of state.units) {
+    if (unit.type !== UNIT_TYPES.RAIDER) continue;
+    const plunderOffsets = [{ dx: 0, dy: 0 }, ...DISTANCE_1_OFFSETS];
+    let plunderCount = 0;
+    for (const { dx, dy } of plunderOffsets) {
+      const tx = unit.x + dx;
+      const ty = unit.y + dy;
+      const tile = getTile(state, tx, ty);
+      if (!tile) continue;
+      if (tile.owner !== null && tile.owner !== unit.owner && tile.type === TERRAIN.FIELD) {
+        // Don't plunder city tiles
+        const isCity = state.cities.some((c) => c.x === tx && c.y === ty);
+        if (isCity) continue;
+        tile.owner = null;
+        plunderCount++;
+      }
+    }
+    if (plunderCount > 0) {
+      const player = state.players.find((p) => p.id === unit.owner);
+      player.gold += plunderCount * ECONOMY.PLUNDER_GOLD;
+      events.push({
+        type: 'PLUNDER',
+        data: {
+          raider: { x: unit.x, y: unit.y, owner: unit.owner },
+          tilesPlundered: plunderCount,
+          goldGained: plunderCount * ECONOMY.PLUNDER_GOLD,
+        },
+      });
+    }
+  }
 }
 
 /**
  * Phase 4: Combat - Melee combat resolves
  */
 function processCombatPhase(state, events) {
-  const multiplier = getScoreMultiplier(state.turn);
-
   // Collect all damage to apply (simultaneous resolution)
   const damageQueue = []; // { target, damage, attacker }
 
@@ -276,7 +340,7 @@ function processCombatPhase(state, events) {
     // Only soldiers and raiders do melee
     if (!UNIT_STATS[unit.type].meleeAttack) continue;
 
-    const damage = UNIT_STATS[unit.type].damage;
+    const baseDamage = UNIT_STATS[unit.type].damage;
 
     // Find all adjacent enemies
     const adjacent = getTilesAtDistance1(unit.x, unit.y);
@@ -285,7 +349,12 @@ function processCombatPhase(state, events) {
         (u) => u.x === pos.x && u.y === pos.y && u.owner !== unit.owner
       );
       if (enemy) {
-        damageQueue.push({ target: enemy, damage, attacker: unit });
+        // Apply counter triangle damage multiplier
+        const mult = DAMAGE_MULTIPLIERS[unit.type][enemy.type];
+        const damage = Math.floor(baseDamage * mult);
+        if (damage > 0) {
+          damageQueue.push({ target: enemy, damage, attacker: unit });
+        }
       }
     }
   }
@@ -296,7 +365,7 @@ function processCombatPhase(state, events) {
 
     const attackerOwner = state.players.find((p) => p.id === attacker.owner);
     const isKill = target.hp <= 0;
-    const scoreGain = Math.floor((isKill ? SCORING.KILL_BONUS : SCORING.DAMAGE_DEALT) * multiplier);
+    const scoreGain = isKill ? SCORING.KILL_BONUS : SCORING.DAMAGE_DEALT;
     attackerOwner.score += scoreGain;
 
     events.push({
@@ -359,13 +428,14 @@ function processSingleBuildAction(state, playerId, action) {
     });
     return true;
   } else if (action.action === ACTIONS.BUILD_CITY) {
-    if (player.gold < ECONOMY.CITY_COST) return false;
+    const cityCost = getCityCost(state, playerId);
+    if (player.gold < cityCost) return false;
 
     const unitAtPos = state.units.find((u) => u.x === action.x && u.y === action.y);
     const cityAtPos = state.cities.find((c) => c.x === action.x && c.y === action.y);
     if (unitAtPos || cityAtPos) return false;
 
-    player.gold -= ECONOMY.CITY_COST;
+    player.gold -= cityCost;
     state.cities.push({ x: action.x, y: action.y, owner: playerId });
     return true;
   } else if (action.action === ACTIONS.EXPAND_TERRITORY) {
@@ -373,7 +443,11 @@ function processSingleBuildAction(state, playerId, action) {
 
     const tile = state.map.tiles.find((t) => t.x === action.x && t.y === action.y);
     if (!tile || tile.owner !== null) return false;
-    if (!isAdjacentToOwnTerritory(state, action.x, action.y, playerId)) return false;
+
+    // Must be adjacent to city-connected territory
+    const connected = getConnectedTerritory(state, playerId);
+    const adj = getTilesAtDistance1(action.x, action.y);
+    if (!adj.some((pos) => connected.has(`${pos.x},${pos.y}`))) return false;
 
     player.gold -= ECONOMY.EXPAND_COST;
     tile.owner = playerId;
@@ -430,47 +504,48 @@ function processBuildPhase(state, actions, events) {
  * Phase 6: Scoring - Monument control and end-of-turn scoring
  */
 function processScoringPhase(state, events) {
-  // Determine monument control
-  const monumentX = state.monument.x;
-  const monumentY = state.monument.y;
+  for (const monument of state.monuments) {
+    // Find units adjacent to this monument
+    const adjacent = getTilesAtDistance1(monument.x, monument.y);
+    const adjacentUnits = { 0: [], 1: [] };
 
-  // Find units adjacent to monument
-  const adjacent = getTilesAtDistance1(monumentX, monumentY);
-  const adjacentUnits = { 0: [], 1: [] };
-
-  for (const pos of adjacent) {
-    const unit = state.units.find((u) => u.x === pos.x && u.y === pos.y);
-    if (unit) {
-      adjacentUnits[unit.owner].push(unit);
+    for (const pos of adjacent) {
+      const unit = state.units.find((u) => u.x === pos.x && u.y === pos.y);
+      if (unit) {
+        adjacentUnits[unit.owner].push(unit);
+      }
     }
-  }
 
-  const team0Adjacent = adjacentUnits[0].length > 0;
-  const team1Adjacent = adjacentUnits[1].length > 0;
+    const team0Adjacent = adjacentUnits[0].length > 0;
+    const team1Adjacent = adjacentUnits[1].length > 0;
 
-  if (team0Adjacent && team1Adjacent) {
-    // Both teams adjacent - random control
-    state.monument.controlledBy = Math.random() < 0.5 ? 0 : 1;
-  } else if (team0Adjacent) {
-    state.monument.controlledBy = 0;
-  } else if (team1Adjacent) {
-    state.monument.controlledBy = 1;
-  }
-  // If no one adjacent, keep previous control
+    if (team0Adjacent && team1Adjacent) {
+      monument.controlledBy = Math.random() < 0.5 ? 0 : 1;
+    } else if (team0Adjacent) {
+      monument.controlledBy = 0;
+    } else if (team1Adjacent) {
+      monument.controlledBy = 1;
+    }
+    // If no one adjacent, keep previous control
 
-  // Award monument score based on total cities in the game
-  if (state.monument.controlledBy !== null) {
-    const monumentScore = getMonumentScore(state);
-    const controller = state.players.find((p) => p.id === state.monument.controlledBy);
-    controller.score += monumentScore;
+    if (monument.controlledBy !== null) {
+      const controller = state.players.find((p) => p.id === monument.controlledBy);
+      const goldAwarded = ECONOMY.MONUMENT_GOLD;
+      const scoreAwarded = state.cities.length * SCORING.MONUMENT_PER_CITY;
+      controller.gold += goldAwarded;
+      controller.score += scoreAwarded;
 
-    events.push({
-      type: 'MONUMENT_CONTROL',
-      data: {
-        controlledBy: state.monument.controlledBy,
-        scoreAwarded: monumentScore,
-      },
-    });
+      events.push({
+        type: 'MONUMENT_CONTROL',
+        data: {
+          x: monument.x,
+          y: monument.y,
+          controlledBy: monument.controlledBy,
+          goldAwarded,
+          scoreAwarded,
+        },
+      });
+    }
   }
 }
 
@@ -579,6 +654,6 @@ function processTurn(state, actions) {
 module.exports = {
   processTurn,
   cloneState,
-  getScoreMultiplier,
   calculateIncome,
+  calculateUpkeep,
 };

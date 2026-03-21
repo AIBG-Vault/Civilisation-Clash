@@ -10,7 +10,6 @@ const {
   TERRAIN_PROPS,
   ECONOMY,
   DISTANCE_1_OFFSETS,
-  DISTANCE_2_OFFSETS,
 } = require('./constants');
 
 /**
@@ -18,13 +17,6 @@ const {
  */
 function getTilesAtDistance1(x, y) {
   return DISTANCE_1_OFFSETS.map(({ dx, dy }) => ({ x: x + dx, y: y + dy }));
-}
-
-/**
- * Get tiles at distance 1 or 2 from a position
- */
-function getTilesAtDistance2(x, y) {
-  return DISTANCE_2_OFFSETS.map(({ dx, dy }) => ({ x: x + dx, y: y + dy }));
 }
 
 /**
@@ -113,6 +105,43 @@ function isAdjacentToOwnTerritory(state, x, y, playerId) {
     }
   }
   return false;
+}
+
+/**
+ * Get the set of all territory tiles connected to any of the player's cities
+ * via owned tiles (BFS flood fill through owned territory).
+ * Returns a Set of "x,y" strings.
+ */
+function getConnectedTerritory(state, playerId) {
+  const connected = new Set();
+  const queue = [];
+
+  // Seed BFS from all city tiles owned by this player
+  for (const city of state.cities) {
+    if (city.owner !== playerId) continue;
+    const key = `${city.x},${city.y}`;
+    if (!connected.has(key)) {
+      connected.add(key);
+      queue.push({ x: city.x, y: city.y });
+    }
+  }
+
+  // BFS through owned tiles
+  while (queue.length > 0) {
+    const { x, y } = queue.shift();
+    const adjacent = getTilesAtDistance1(x, y);
+    for (const pos of adjacent) {
+      const key = `${pos.x},${pos.y}`;
+      if (connected.has(key)) continue;
+      const tile = getTile(state, pos.x, pos.y);
+      if (tile && tile.owner === playerId) {
+        connected.add(key);
+        queue.push(pos);
+      }
+    }
+  }
+
+  return connected;
 }
 
 /**
@@ -210,6 +239,15 @@ function validateBuildUnit(state, playerId, action) {
 }
 
 /**
+ * Get the cost of the next city for a player (geometric scaling).
+ * Capital doesn't count — first BUILT city costs base (80G), second 120G, third 180G, etc.
+ */
+function getCityCost(state, playerId) {
+  const built = Math.max(0, state.cities.filter((c) => c.owner === playerId).length - 1);
+  return Math.round(ECONOMY.CITY_COST * Math.pow(ECONOMY.CITY_COST_FACTOR, built));
+}
+
+/**
  * Validate a BUILD_CITY action
  */
 function validateBuildCity(state, playerId, action) {
@@ -243,12 +281,13 @@ function validateBuildCity(state, playerId, action) {
     return { valid: false, error: `Position (${x}, ${y}) is blocked by a unit` };
   }
 
-  // Check player has enough gold
+  // Check player has enough gold (geometric scaling)
   const player = state.players.find((p) => p.id === playerId);
-  if (player.gold < ECONOMY.CITY_COST) {
+  const cost = getCityCost(state, playerId);
+  if (player.gold < cost) {
     return {
       valid: false,
-      error: `Not enough gold (have ${player.gold}, need ${ECONOMY.CITY_COST})`,
+      error: `Not enough gold (have ${player.gold}, need ${cost})`,
     };
   }
 
@@ -277,9 +316,15 @@ function validateExpandTerritory(state, playerId, action) {
     return { valid: false, error: `Position (${x}, ${y}) is already owned` };
   }
 
-  // Check adjacent to player's territory
-  if (!isAdjacentToOwnTerritory(state, x, y, playerId)) {
-    return { valid: false, error: `Position (${x}, ${y}) is not adjacent to your territory` };
+  // Check adjacent to player's territory that is connected to a city
+  const connectedTiles = getConnectedTerritory(state, playerId);
+  const adjacent = getTilesAtDistance1(x, y);
+  const hasConnectedNeighbor = adjacent.some((pos) => connectedTiles.has(`${pos.x},${pos.y}`));
+  if (!hasConnectedNeighbor) {
+    return {
+      valid: false,
+      error: `Position (${x}, ${y}) is not adjacent to city-connected territory`,
+    };
   }
 
   // Check player has enough gold
@@ -347,9 +392,9 @@ module.exports = {
   validateMove,
   validateBuildUnit,
   validateBuildCity,
+  getCityCost,
   validateExpandTerritory,
   getTilesAtDistance1,
-  getTilesAtDistance2,
   chebyshevDistance,
   manhattanDistance,
   isInBounds,
@@ -359,4 +404,5 @@ module.exports = {
   isPassable,
   isInZoC,
   isAdjacentToOwnTerritory,
+  getConnectedTerritory,
 };
