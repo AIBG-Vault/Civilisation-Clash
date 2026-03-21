@@ -634,9 +634,17 @@ function processTurn(state, actions) {
     resetUnitFlags(newState);
     newState.turn++;
 
-    // Recalculate income for display
+    // Recalculate income for display (includes monument gold)
     for (const player of newState.players) {
-      player.income = calculateIncome(newState, player.id);
+      let income = calculateIncome(newState, player.id);
+      if (newState.monuments) {
+        for (const monument of newState.monuments) {
+          if (monument.controlledBy === player.id) {
+            income += ECONOMY.MONUMENT_GOLD;
+          }
+        }
+      }
+      player.income = income;
     }
   }
 

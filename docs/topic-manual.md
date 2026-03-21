@@ -128,7 +128,7 @@ upkeep = 1.0 * (1.50^excess - 1) / (1.50 - 1)
 
 If gold goes negative, the cheapest units are automatically disbanded until the player is solvent.
 
-**Expand Territory:** 5G per tile. Target must be neutral, controllable (field), and adjacent (distance 1) to your territory. The adjacent territory must be connected to one of your cities. Expansions chain within a turn (each new tile counts for subsequent expansions).
+**Expand Territory:** 5G per tile. Target must be neutral, controllable (field), and adjacent (distance 1) to your territory. The adjacent territory must be connected to one of your cities. Expansions chain within a turn (each new tile counts for subsequent expansions). Note: all actions are validated against the game state at the time of submission (before any phases run). You cannot expand onto a tile that a raider will plunder later in the same turn. Wait until the next turn.
 
 **Build City:** Geometric cost: 80G x 1.5^n, where n is the number of cities you have already built (the capital does not count). Must be on a field tile you own, with no unit or city on it.
 
