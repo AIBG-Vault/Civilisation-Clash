@@ -268,7 +268,7 @@ By default, fog of war is **enabled**. Each player only sees tiles within their 
 
 When fog is enabled, `state.units`, `state.cities`, and `state.map.tiles[].owner` are **filtered per player**. Bots only receive information within their vision. `state.monuments` is **never filtered**. The state includes `_fogEnabled: true` and `_visibleTiles: ["x,y", ...]`.
 
-Events (COMBAT, DEATH, PLUNDER, etc.) are also filtered. You only see events involving your own units or occurring within your vision.
+Events (COMBAT, DEATH, PLUNDER, etc.) are **not filtered** by fog. You always receive all events.
 
 ### Spectators
 

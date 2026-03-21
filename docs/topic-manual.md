@@ -206,7 +206,7 @@ Fog of war is enabled by default. Each player only sees tiles within their visio
 - Enemy cities
 - Territory ownership (shows as neutral)
 
-Events are also filtered. You only see events involving your own units or occurring within your vision. Monument events are always visible.
+Events (combat, plunder, captures, etc.) are **not filtered** by fog. You always receive all events.
 
 ### 2.11 Victory Conditions
 

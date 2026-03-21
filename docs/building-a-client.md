@@ -559,7 +559,7 @@ When fog is enabled (default), the state your bot receives is filtered:
 - `state._fogEnabled` is `true`
 - `state._visibleTiles` is an array of `"x,y"` strings your team can see
 
-Events are also filtered. You only see events that involve your units or occur within your vision. Monument events are always visible.
+Events are **not filtered** by fog. You always receive all events regardless of vision.
 
 Vision radii are documented in [Game Mechanics](#game-mechanics).
 

@@ -28,7 +28,7 @@ const {
 } = require('./validation');
 const { renderState, printState, renderEvents, printEvents } = require('./terminal');
 const { computeVision } = require('./vision');
-const { filterStateForPlayer, filterEventsForPlayer } = require('./fog');
+const { filterStateForPlayer } = require('./fog');
 const constants = require('./constants');
 
 // Re-export everything
@@ -63,7 +63,6 @@ module.exports = {
   // Fog of war
   computeVision,
   filterStateForPlayer,
-  filterEventsForPlayer,
 
   // Terminal visualization
   renderState,
