@@ -5,6 +5,7 @@ node_modules/
 .claude/
 .env
 
+_vibe_coding
 players.json
 server/saves/
 
