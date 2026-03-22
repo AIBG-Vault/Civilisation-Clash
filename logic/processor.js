@@ -88,6 +88,7 @@ function processIncomePhase(state, events) {
     player.income = netIncome;
 
     // If gold goes negative, disband cheapest units until solvent
+    let currentUpkeep = upkeep;
     while (player.gold < 0) {
       const playerUnits = state.units.filter((u) => u.owner === player.id);
       if (playerUnits.length === 0) break;
@@ -97,9 +98,10 @@ function processIncomePhase(state, events) {
       const disbanded = playerUnits[0];
       state.units = state.units.filter((u) => u !== disbanded);
 
-      // Refund half the upkeep saved and recalculate
+      // Refund the upkeep saved by disbanding this unit
       const newUpkeep = calculateUpkeep(state, player.id);
-      player.gold += upkeep - newUpkeep; // Restore the upkeep difference
+      player.gold += currentUpkeep - newUpkeep;
+      currentUpkeep = newUpkeep;
 
       events.push({
         type: 'DISBAND',
